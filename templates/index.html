@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}NutriApp - Bienvenida{% endblock %}
+
+{% block content %}
+<div class="container mt-5 mb-5">
+
+   <div class="row mb-4 text-center">
+    <div class="col-md-12">
+      <h1><i class="fas fa-leaf"></i> Bienvenida a NutriApp</h1>
+      <p class="lead text-muted">
+        Tu asistente para la gestión de evaluaciones y planes nutricionales.
+      </p>
+    </div>
+  </div>
+
+  <div class="row mt-5">
+    <div class="col-md-8 offset-md-2 text-center">
+        <p class="h4 mb-4">¿Qué deseas hacer?</p>
+        <div class="d-grid gap-3 d-md-block">
+            <a href="{{ url_for('pacientes_dashboard') }}" class="btn btn-primary btn-lg">
+                <i class="fas fa-users"></i> Gestionar Pacientes
+            </a>
+            <a href="{{ url_for('formulario_evaluacion') }}" class="btn btn-success btn-lg">
+                <i class="fas fa-user-plus"></i> Nueva Evaluación
+            </a>
+        </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<!-- Esta página ya no contiene scripts complejos. -->
+<!-- La lógica de búsqueda está en pacientes_dashboard.html -->
+<!-- La lógica del formulario y precarga está en formulario_evaluacion.html -->
+<!-- El script main.js (cargado desde base.html) contiene las funciones globales. -->
+{% endblock %}

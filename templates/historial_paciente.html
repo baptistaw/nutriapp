@@ -1,0 +1,480 @@
+{% extends 'base.html' %} {# Cambiado para usar la plantilla base principal #}
+
+{% block title %}Historial de {{ patient.name }} {{ patient.surname }} - NutriApp{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .patient-header {
+        background-color: #e9ecef;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+    }
+    .patient-header h2 {
+        color: #0056b3; /* Azul oscuro para el nombre */
+    }
+    .evaluation-card {
+        border: 1px solid #dee2e6;
+        border-radius: .25rem;
+        margin-bottom: 1rem;
+        transition: box-shadow .15s ease-in-out;
+    }
+    .evaluation-card:hover {
+        box-shadow: 0 .5rem 1rem rgba(0,0,0,.07)!important;
+    }
+    .evaluation-card .card-header {
+        background-color: rgba(0,0,0,.03);
+        border-bottom: 1px solid rgba(0,0,0,.125);
+        font-weight: bold;
+    }
+    .evaluation-card .card-body p {
+        margin-bottom: 0.5rem;
+    }
+    .btn-action-group .btn {
+        margin-right: 5px;
+        margin-bottom: 5px; /* Para móviles */
+    }
+    .no-evaluations {
+        text-align: center;
+        padding: 20px;
+        background-color: #f8f9fa;
+        border: 1px dashed #ced4da;
+        border-radius: 5px;
+    }
+    .charts-container {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+
+    <div class="patient-header">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2><i class="fas fa-user-injured"></i> {{ patient.name }} {{ patient.surname }}</h2>
+                <p class="lead mb-1">C.I.: {{ patient.cedula }}</p>
+                {% if patient.email %}<p class="text-muted mb-0"><i class="fas fa-envelope"></i> {{ patient.email }}{% endif %}
+                {% if patient.phone_number %} | <i class="fas fa-phone"></i> {{ patient.phone_number }}{% endif %}</p>
+            </div>
+            <div class="d-flex flex-column align-items-md-end align-items-start mt-3 mt-md-0">
+                <a href="{{ url_for('formulario_evaluacion', patient_id=patient.id, action='new_eval_for_patient') }}" class="btn btn-primary btn-lg mb-2">
+                    <i class="fas fa-plus-circle"></i> Nueva Evaluación
+                </a>
+                <a href="{{ url_for('editar_paciente', patient_id=patient.id) }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-edit"></i> Editar Información del Paciente
+                </a>
+                {% if chart_data and chart_data.labels|length > 1 %}
+                <button type="button" class="btn btn-info btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#graficosModal">
+                    <i class="fas fa-chart-area"></i> Ver Gráficos de Evolución
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Contenedor principal para la lista de evaluaciones y los gráficos -->
+    <div class="row mb-4"> {# Fila solo para el historial de evaluaciones #}
+        <div class="col-lg-12"> {# El historial ahora puede ocupar más ancho si es necesario, o ajustarlo según prefieras (ej. col-lg-8) #}
+            <h3 class="mb-3"><i class="fas fa-history"></i> Historial de Evaluaciones</h3>
+            {% if evaluations %}
+                {% for eval in evaluations|sort(attribute='consultation_date', reverse=True) %} {# Ordenar aquí para mostrar la más reciente primero en la lista #}
+                <div class="card evaluation-card shadow-sm">
+                    <div class="card-header">
+                        Evaluación del: {{ eval.consultation_date.strftime('%d/%m/%Y') }}
+                        (ID: {{ eval.id }})
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <p><strong>Peso Registrado:</strong> {{ eval.weight_at_eval if eval.weight_at_eval is not none else 'N/A' }} kg</p>
+                                <p><strong>Tipo de Dieta (Base):</strong> {{ eval.diet_type if eval.diet_type else 'N/A' }}</p>
+                                {% if eval.target_weight %}
+                                <p><strong>Peso Objetivo:</strong> {{ eval.target_weight }} kg</p>
+                                {% endif %}
+                                {% if eval.edited_plan_text %}
+                                    <p><strong>Plan Generado:</strong> Sí</p>
+                                {% else %}
+                                    <p><strong>Plan Generado:</strong> No</p>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4 text-md-end btn-action-group">
+                                <a href="{{ url_for('editar_evaluacion', evaluation_id=eval.id) }}" class="btn btn-sm btn-outline-warning" title="Editar esta evaluación">
+                                    <i class="fas fa-edit"></i> Editar
+                                </a>
+                                <a href="{{ url_for('ver_pdf', evaluation_id=eval.id) }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Ver PDF Completo (Profesional)">
+                                    <i class="fas fa-file-pdf"></i> PDF Completo
+                                </a>
+                                {% if eval.edited_plan_text %} {# Solo mostrar si hay plan para el paciente #}
+                                <a href="{{ url_for('ver_pdf_paciente', evaluation_id=eval.id) }}" class="btn btn-sm btn-outline-info" target="_blank" title="Ver PDF para Paciente">
+                                    <i class="fas fa-file-alt"></i> PDF Paciente
+                                </a>
+                                {% endif %}
+                                <a href="{{ url_for('formulario_evaluacion', load_evaluation_id=eval.id, action='load_eval_for_new') }}" class="btn btn-sm btn-outline-success mt-2" title="Usar como base para nueva evaluación">
+                                    <i class="fas fa-copy"></i> Usar como Base
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="no-evaluations">
+                <p class="lead">Este paciente aún no tiene evaluaciones registradas.</p>
+                <p>Puedes iniciar una <a href="{{ url_for('formulario_evaluacion', patient_id=patient.id, action='new_eval_for_patient') }}">nueva evaluación ahora</a>.</p>
+            </div>
+            {% endif %}
+        </div>
+
+    </div> <!-- Cierra el .row del historial -->
+
+    <!-- Nueva sección para los Gráficos de Evolución, ocupando más ancho -->
+    {% if chart_data and chart_data.labels|length <= 1 and evaluations|length > 0 %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="charts-container text-center">
+                <h3 class="mb-3"><i class="fas fa-chart-line"></i> Evolución de Parámetros</h3>
+                <p class="text-muted">Se necesita al menos dos evaluaciones para mostrar gráficos de evolución.</p>
+                <p class="text-muted">Si ya existen, puedes verlos haciendo clic en el botón "Ver Gráficos de Evolución" arriba.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Modal para los Gráficos -->
+    <div class="modal fade" id="graficosModal" tabindex="-1" aria-labelledby="graficosModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl"> {/* modal-xl para un modal más ancho */}
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="graficosModalLabel"><i class="fas fa-chart-line"></i> Gráficos de Evolución del Paciente</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {% if chart_data and chart_data.labels|length > 1 %}
+                    <div class="row g-4"> <!-- Fila interna para distribuir los gráficos, g-4 añade espaciado -->
+                        <div class="col-lg-6 mb-3">
+                            <div class="card shadow-sm">
+                                <div class="card-header">Evolución del Peso (kg)</div>
+                                <div class="card-body"><canvas id="weightChartModal"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6 mb-3">
+                            <div class="card shadow-sm">
+                                <div class="card-header">Evolución del IMC</div>
+                                <div class="card-body"><canvas id="imcChartModal"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6 mb-3">
+                            <div class="card shadow-sm">
+                                <div class="card-header">Evolución del ICC</div>
+                                <div class="card-body"><canvas id="whrChartModal"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6 mb-3">
+                            <div class="card shadow-sm">
+                                <div class="card-header">Evolución del ICA</div>
+                                <div class="card-body"><canvas id="whtrChartModal"></canvas></div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-center">No hay suficientes datos para generar los gráficos de evolución (se necesitan al menos dos evaluaciones).</p>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script> {# Chart.js Core PRIMERO #}
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script> {# Plugin de anotación #}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        console.log("Historial Paciente: DOMContentLoaded disparado."); // DEBUG
+        const chartData = {{ chart_data | tojson | safe }};
+        console.log("Historial Paciente: chartData recibido del backend:", JSON.parse(JSON.stringify(chartData))); // DEBUG
+        
+        let weightChartInstanceModal = null;
+        let imcChartInstanceModal = null;
+        let whrChartInstanceModal = null;
+        let whtrChartInstanceModal = null;
+
+        function destroyChart(instance) {
+            if (instance) {
+                instance.destroy();
+            }
+            return null;
+        }
+
+        // La función createChart no necesita cambios significativos, solo se llamará con los IDs del modal
+        function createChart(canvasId, label, data, borderColor, backgroundColor, yAxisLabel = '') {
+            const ctx = document.getElementById(canvasId);
+            console.log(`[${canvasId}] Intentando obtener canvas. Elemento encontrado:`, ctx); // DEBUG
+            if (!ctx || !data || (Array.isArray(data) && data.every(val => val === null))) {
+                console.warn(`[${canvasId}] No se crea el gráfico simple. Causa: ctx=${!!ctx}, data=${!!data}, data_is_all_null=${Array.isArray(data) && data.every(val => val === null)}`);
+                return null;
+            }
+            console.log(`[${canvasId}] Creando gráfico simple.`); // DEBUG
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: borderColor,
+                        backgroundColor: backgroundColor,
+                        fill: false,
+                        tension: 0.1,
+                        spanGaps: true 
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: false, 
+                            title: { display: yAxisLabel !== '', text: yAxisLabel }
+                        },
+                        x: {
+                            title: { display: true, text: 'Fecha de Consulta' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true }
+                    }
+                }
+            });
+        }
+
+        function createChartWithAnnotations(canvasId, label, data, borderColor, backgroundColor, yAxisLabel, referenceRanges) {
+            const ctx = document.getElementById(canvasId);
+            console.log(`[${canvasId}] Intentando obtener canvas para anotaciones. Elemento encontrado:`, ctx); // DEBUG
+            if (!ctx || !data || (Array.isArray(data) && data.every(val => val === null))) {
+                console.warn(`[${canvasId}] No se crea el gráfico con anotaciones. Causa: ctx=${!!ctx}, data=${!!data}, data_is_all_null=${Array.isArray(data) && data.every(val => val === null)}`);
+                return null;
+            }
+            
+            console.log(`[${canvasId}] Creando gráfico con anotaciones. Referencias recibidas:`, JSON.parse(JSON.stringify(referenceRanges))); // DEBUG
+            
+            function getAnnotationStyle(rangeKey) {
+                const keyLower = rangeKey.toLowerCase();
+                let borderColor = 'rgba(100, 100, 100, 0.5)'; 
+                let riskLabelIndicator = ''; 
+
+                const greenColor = 'rgba(40, 167, 69, 0.7)';  
+                const yellowColor = 'rgba(255, 193, 7, 0.7)'; 
+                const redColor = 'rgba(220, 53, 69, 0.7)';    
+
+                if (keyLower.includes('bajo peso')) { borderColor = yellowColor; riskLabelIndicator = '(Precaución)'; }
+                else if (keyLower.includes('normal')) { borderColor = greenColor; riskLabelIndicator = '(Normal)'; }
+                else if (keyLower.includes('sobrepeso')) { borderColor = yellowColor; riskLabelIndicator = '(Sobrepeso)'; }
+                else if (keyLower.includes('obesidad')) { borderColor = redColor; riskLabelIndicator = '(Obesidad)'; }
+                else if (keyLower.includes('riesgo bajo') || keyLower.includes('saludable')) { borderColor = greenColor; riskLabelIndicator = '(Bajo/Saludable)'; }
+                else if (keyLower.includes('riesgo moderado') || keyLower.includes('riesgo aumentado')) { borderColor = yellowColor; riskLabelIndicator = '(Moderado/Aumentado)'; }
+                else if (keyLower.includes('riesgo alto') && !keyLower.includes('actual')) { borderColor = redColor; riskLabelIndicator = '(Alto)'; } 
+
+                return { 
+                    borderColor: borderColor, 
+                    riskLabelIndicator: riskLabelIndicator, 
+                    borderWidth: 2, 
+                    borderDash: [6, 6], 
+                    labelDisplay: true, 
+                    labelFont: { size: 9, weight: 'normal' }, 
+                    labelFontColor: 'black', 
+                    labelBackgroundColor: 'rgba(255, 255, 255, 0.75)', 
+                    labelPadding: 2 
+                };
+            }
+
+            const annotations = {};
+            let annotationIndex = 0;
+
+            if (referenceRanges && typeof referenceRanges === 'object' && Object.keys(referenceRanges).length > 0) {
+                console.log(`[${canvasId}] Procesando referenceRanges:`, referenceRanges); 
+                for (const rangeKey in referenceRanges) {
+                    console.log(`[${canvasId}]   Procesando rangeKey: "${rangeKey}"`); 
+                    if (rangeKey.startsWith('_') || rangeKey.toLowerCase().includes('actual')) {
+                        console.log(`[${canvasId}]     Ignorando rangeKey: "${rangeKey}" (clave interna o de riesgo actual).`); 
+                        continue; 
+                    }
+                    const rangeValueStr = referenceRanges[rangeKey];
+                    console.log(`[${canvasId}]     rangeValueStr: "${rangeValueStr}" (tipo: ${typeof rangeValueStr})`); 
+                    let valueToAnnotate = null;
+                    let labelContent = rangeKey.replace(/_/g, ' '); 
+
+                    if (typeof rangeValueStr === 'string') {
+                        if (rangeValueStr.includes(' - ')) { 
+                            const parts = rangeValueStr.split(' - ');
+                            const lower = parseFloat(parts[0]);
+                            const upper = parseFloat(parts[1]);
+                            if (!isNaN(lower)) {
+                                const annKeyL = `line_lower_${annotationIndex}`;
+                                const styleL = getAnnotationStyle(rangeKey);
+                                annotations[annKeyL] = { type: 'line', yMin: lower, yMax: lower, borderColor: styleL.borderColor, borderWidth: styleL.borderWidth, borderDash: styleL.borderDash, label: { content: `${labelContent} (Min: ${lower}) ${styleL.riskLabelIndicator}`, display: styleL.labelDisplay, position: 'start', font: styleL.labelFont, color: styleL.labelFontColor, backgroundColor: styleL.labelBackgroundColor, padding: styleL.labelPadding, yAdjust: -3 } };
+                                console.log(`[${canvasId}]       Anotación añadida (lower): ${annKeyL}`, JSON.parse(JSON.stringify(annotations[annKeyL]))); 
+                                annotationIndex++;
+                            }
+                            if (!isNaN(upper)) {
+                                const annKeyU = `line_upper_${annotationIndex}`;
+                                const styleU = getAnnotationStyle(rangeKey); 
+                                annotations[annKeyU] = { type: 'line', yMin: upper, yMax: upper, borderColor: styleU.borderColor, borderWidth: styleU.borderWidth, borderDash: styleU.borderDash, label: { content: `${labelContent} (Max: ${upper}) ${styleU.riskLabelIndicator}`, display: styleU.labelDisplay, position: 'end', font: styleU.labelFont, color: styleU.labelFontColor, backgroundColor: styleU.labelBackgroundColor, padding: styleU.labelPadding, yAdjust: 3 } };
+                                console.log(`[${canvasId}]       Anotación añadida (upper): ${annKeyU}`, JSON.parse(JSON.stringify(annotations[annKeyU]))); 
+                                annotationIndex++;
+                            }
+                            continue; 
+                        } else if (rangeValueStr.startsWith('<=')) {
+                            valueToAnnotate = parseFloat(rangeValueStr.replace('<=', '').trim());
+                            labelContent = `${labelContent} (<= ${valueToAnnotate})`;
+                        } else if (rangeValueStr.startsWith('<')) {
+                            valueToAnnotate = parseFloat(rangeValueStr.replace('<', '').trim());
+                            labelContent = `${labelContent} (< ${valueToAnnotate})`;
+                        } else if (rangeValueStr.startsWith('>=')) {
+                            valueToAnnotate = parseFloat(rangeValueStr.replace('>=', '').trim());
+                            labelContent = `${labelContent} (>= ${valueToAnnotate})`;
+                        } else if (rangeValueStr.startsWith('>')) {
+                            valueToAnnotate = parseFloat(rangeValueStr.replace('>', '').trim());
+                            labelContent = `${labelContent} (> ${valueToAnnotate})`;
+                        } else {
+                            console.log(`[${canvasId}]     Formato de string de rango no reconocido para "${rangeKey}": "${rangeValueStr}"`); 
+                        }
+                    } else {
+                         console.log(`[${canvasId}]     rangeValueStr no es un string para "${rangeKey}":`, rangeValueStr); 
+                    }
+
+                    if (valueToAnnotate !== null && !isNaN(valueToAnnotate)) {
+                        const annKeyS = `line_single_${annotationIndex}`;
+                        const styleS = getAnnotationStyle(rangeKey);
+                        annotations[annKeyS] = {
+                            type: 'line',
+                            yMin: valueToAnnotate,
+                            yMax: valueToAnnotate,
+                            borderColor: styleS.borderColor,
+                            borderWidth: styleS.borderWidth,
+                            borderDash: styleS.borderDash,
+                            label: {
+                                content: `${labelContent} ${styleS.riskLabelIndicator}`,
+                                display: styleS.labelDisplay,
+                                position: (annotationIndex % 2 === 0) ? 'start' : 'end', 
+                                font: styleS.labelFont,
+                                color: styleS.labelFontColor,
+                                backgroundColor: styleS.labelBackgroundColor,
+                                padding: styleS.labelPadding,
+                                yAdjust: (annotationIndex % 4 < 2) ? -3 : 3 
+                            }
+                        };
+                        console.log(`[${canvasId}]       Anotación añadida (single): ${annKeyS}`, JSON.parse(JSON.stringify(annotations[annKeyS]))); 
+                        annotationIndex++;
+                    } else {
+                        console.log(`[${canvasId}]     No se pudo parsear valueToAnnotate para "${rangeKey}" o es NaN.`); 
+                    }
+                }
+            } else {
+                console.log(`[${canvasId}] No hay referenceRanges válidos o está vacío.`); 
+            }
+            
+            console.log(`[${canvasId}] Anotaciones finales a aplicar:`, JSON.parse(JSON.stringify(annotations))); 
+
+            try {
+                const chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: chartData.labels,
+                        datasets: [{ label: label, data: data, borderColor: borderColor, backgroundColor: backgroundColor, fill: false, tension: 0.1, spanGaps: true }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        scales: {
+                            y: { beginAtZero: false, title: { display: yAxisLabel !== '', text: yAxisLabel } },
+                            x: { title: { display: true, text: 'Fecha de Consulta' } }
+                        },
+                        plugins: {
+                            legend: { display: true },
+                            annotation: { annotations: annotations }
+                        }
+                    }
+                });
+                console.log(`[${canvasId}] Gráfico con anotaciones creado exitosamente.`); 
+                return chartInstance;
+            } catch (error) {
+                console.error(`[${canvasId}] Error CRÍTICO al crear el gráfico con anotaciones:`, error); 
+                console.warn(`[${canvasId}] Intentando dibujar gráfico sin anotaciones como fallback debido a error.`);
+                ctx.parentNode.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+                return createChart(canvasId, label, data, borderColor, backgroundColor, yAxisLabel);
+            }
+        }
+
+        function renderChartsInModal() {
+            console.log("Historial Paciente: renderChartsInModal llamado.");
+            weightChartInstanceModal = destroyChart(weightChartInstanceModal);
+            imcChartInstanceModal = destroyChart(imcChartInstanceModal);
+            whrChartInstanceModal = destroyChart(whrChartInstanceModal);
+            whtrChartInstanceModal = destroyChart(whtrChartInstanceModal);
+
+            if (chartData && chartData.labels && chartData.labels.length > 1) {
+                console.log("Historial Paciente (Modal): Hay suficientes datos para dibujar gráficos.");
+                weightChartInstanceModal = createChart('weightChartModal', 'Peso (kg)', chartData.weight, 'rgb(75, 192, 192)', 'rgba(75, 192, 192, 0.2)', 'Peso (kg)');
+                
+                const references = chartData.references || {};
+                console.log("Historial Paciente (Modal): Objeto 'references' global para los gráficos:", JSON.parse(JSON.stringify(references)));
+
+                const imcReferences = (references && references.imc) ? references.imc : {};
+                console.log("Historial Paciente (Modal): Referencias para IMC:", JSON.parse(JSON.stringify(imcReferences)));
+                imcChartInstanceModal = createChartWithAnnotations('imcChartModal', 'IMC', chartData.imc, 'rgb(255, 99, 132)', 'rgba(255, 99, 132, 0.2)', 'IMC', imcReferences);
+                
+                const whrReferences = (references && references.whr) ? references.whr : {};
+                console.log("Historial Paciente (Modal): Referencias para WHR (ICC):", JSON.parse(JSON.stringify(whrReferences)));
+                whrChartInstanceModal = createChartWithAnnotations('whrChartModal', 'ICC', chartData.whr, 'rgb(54, 162, 235)', 'rgba(54, 162, 235, 0.2)', 'ICC', whrReferences);
+                
+                const whtrReferences = (references && references.whtr) ? references.whtr : {};
+                console.log("Historial Paciente (Modal): Referencias para WHTR (ICA):", JSON.parse(JSON.stringify(whtrReferences)));
+                whtrChartInstanceModal = createChartWithAnnotations('whtrChartModal', 'ICA', chartData.whtr, 'rgb(255, 205, 86)', 'rgba(255, 205, 86, 0.2)', 'ICA', whtrReferences);
+            } else {
+                console.log("Historial Paciente (Modal): No hay suficientes datos para dibujar gráficos de evolución.");
+                const modalChartIds = ['weightChartModal', 'imcChartModal', 'whrChartModal', 'whtrChartModal'];
+                modalChartIds.forEach(id => {
+                    const canvas = document.getElementById(id);
+                    if (canvas) {
+                        const ctxModal = canvas.getContext('2d');
+                        ctxModal.clearRect(0, 0, canvas.width, canvas.height);
+                    }
+                });
+            }
+        }
+
+        const graficosModalElement = document.getElementById('graficosModal');
+        if (graficosModalElement) {
+            console.log("Historial Paciente: Elemento del modal #graficosModal ENCONTRADO. Añadiendo event listener..."); 
+            graficosModalElement.addEventListener('shown.bs.modal', function () {
+                console.log("Historial Paciente: Evento 'shown.bs.modal' DISPARADO."); 
+                console.log("Historial Paciente: Llamando a renderChartsInModal directamente..."); 
+                renderChartsInModal(); 
+            });
+            console.log("Historial Paciente: Event listener para 'shown.bs.modal' AÑADIDO."); 
+        } else {
+            console.error("Historial Paciente: CRÍTICO - Elemento del modal #graficosModal NO ENCONTRADO. No se pueden mostrar los gráficos del modal."); 
+        }
+
+        // Ya no se crean los gráficos directamente al cargar la página, solo cuando se muestra el modal.
+        // La lógica original que llamaba a createChart y createChartWithAnnotations aquí se ha movido a renderChartsInModal.
+        if (!(chartData && chartData.labels && chartData.labels.length > 1) && {{ evaluations|length }} > 0) {
+             console.log("Historial Paciente: Hay evaluaciones pero no suficientes para gráficos de evolución en la carga inicial.");
+        } else if ({{ evaluations|length }} === 0) {
+            console.log("Historial Paciente: No hay evaluaciones para este paciente.");
+        }
+    });
+</script>
+{% endblock %}

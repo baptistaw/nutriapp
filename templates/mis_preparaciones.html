@@ -1,0 +1,459 @@
+{% extends 'base.html' %}
+
+{% block title %}Mis Preparaciones - NutriApp{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<link href="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.css" rel="stylesheet" type="text/css" />
+<style>
+    .tagify-container {
+        border: 1px solid #ced4da;
+        border-radius: .25rem;
+        padding: .375rem .75rem;
+    }
+    .ingredients-section small {
+        display: block;
+        margin-top: 5px;
+    }
+    .ingredient-row .form-control-sm,
+    .ingredient-row .form-select-sm {
+        /* Ajustar padding si es necesario para mejor alineación vertical */
+    }
+    .ingredient-row .remove-ingredient-btn {
+        /* Asegurar que el botón de eliminar esté bien alineado */
+        height: calc(1.5em + .5rem + 2px); /* Altura similar a form-control-sm */
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <h2 class="mb-4"><i class="fas fa-utensils"></i> Mis Preparaciones Favoritas</h2>
+
+    <!-- Formulario para Crear/Editar Preparación -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0" id="preparation-form-title"><i class="fas fa-plus-circle"></i> Añadir Nueva Preparación</h5>
+        </div>
+        <div class="card-body">
+            <form id="preparation-form">
+                <input type="hidden" id="preparation_id" name="preparation_id">
+
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label for="prep_name" class="form-label">Nombre de la Preparación<span class="text-danger">*</span>:</label>
+                        <input type="text" id="prep_name" name="name" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="prep_type" class="form-label">Tipo de Comida:</label>
+                        <select id="prep_type" name="preparation_type" class="form-select form-select-sm">
+                            <option value="">Seleccionar...</option>
+                            <option value="desayuno">Desayuno</option>
+                            <option value="almuerzo">Almuerzo</option>
+                            <option value="cena">Cena</option>
+                            <option value="snack_am">Snack AM</option>
+                            <option value="snack_pm">Snack PM</option>
+                            <option value="guarnicion">Guarnición</option>
+                            <option value="postre">Postre</option>
+                            <option value="bebida">Bebida</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-3 mt-3">
+                    <label for="prep_description" class="form-label">Descripción Breve:</label>
+                    <textarea id="prep_description" name="description" class="form-control form-control-sm" rows="2"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label for="prep_num_servings" class="form-label">Número de Porciones que Rinde:</label>
+                    <input type="number" id="prep_num_servings" name="num_servings" class="form-control form-control-sm" value="1" min="0.1" step="0.1" required>
+                </div>
+
+                <!-- Sección de Ingredientes Dinámicos -->
+                <div class="mb-3 ingredients-section">
+                    <label class="form-label">Ingredientes<span class="text-danger">*</span>:</label>
+                    <div id="ingredient-rows-container">
+                        <!-- Las filas de ingredientes se añadirán aquí dinámicamente -->
+                    </div>
+                    <button type="button" id="btn-add-ingredient" class="btn btn-success btn-sm mt-2"><i class="fas fa-plus"></i> Añadir Ingrediente</button>
+                </div>
+                <!-- Fin Sección de Ingredientes Dinámicos -->
+
+
+                <div class="mb-3">
+                    <label for="prep_instructions" class="form-label">Instrucciones de Preparación:</label>
+                    <textarea id="prep_instructions" name="instructions" class="form-control form-control-sm" rows="4"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label for="prep_suitability_tags" class="form-label">Tags de Adecuación (Enter o coma para separar):</label>
+                    <input type="text" id="prep_suitability_tags" name="suitability_tags" class="form-control form-control-sm" placeholder="Ej: diabetico, bajo_sodio, alto_proteina">
+                    <small class="form-text text-muted">Estos tags ayudarán a filtrar preparaciones para pacientes específicos.</small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="prep_source" class="form-label">Origen (opcional):</label>
+                    <input type="text" id="prep_source" name="source" class="form-control form-control-sm" placeholder="Ej: Receta familiar, Libro XYZ">
+                     <small class="form-text text-muted">Por defecto: "creada_usuario". Si es una adaptación de IA, se podría indicar.</small>
+                </div>
+
+                <!-- Sección para mostrar información nutricional por porción (visible al editar) -->
+                <div id="nutritional-info-per-serving" class="card bg-light mb-3" style="display: none;">
+                    <div class="card-header">
+                        Información Nutricional por Porción
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text mb-1"><strong>Calorías:</strong> <span id="nutri_calories">--</span> kcal</p>
+                        <p class="card-text mb-1"><strong>Proteína:</strong> <span id="nutri_protein">--</span> g</p>
+                        <p class="card-text mb-1"><strong>Carbohidratos:</strong> <span id="nutri_carb">--</span> g</p>
+                        <p class="card-text mb-1"><strong>Grasa:</strong> <span id="nutri_fat">--</span> g</p>
+                        <p class="card-text mb-1"><strong>Micronutrientes:</strong></p>
+                        <ul id="nutri_micros" class="list-group list-group-flush"></ul>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end">
+                    <button type="button" class="btn btn-secondary btn-sm me-2" id="btn-clear-prep-form">Limpiar / Cancelar Edición</button>
+                    <button type="submit" class="btn btn-primary btn-sm" id="btn-save-preparation"><i class="fas fa-save"></i> Guardar Preparación</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Lista de Preparaciones Guardadas -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-light">
+            <h5 class="mb-0"><i class="fas fa-list-ul"></i> Preparaciones Guardadas</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Tipo</th>
+                            <th>Tags de Adecuación</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="preparations-table-body">
+                        <!-- Las filas se cargarán aquí con JavaScript -->
+                        <tr>
+                            <td colspan="4" class="text-center">Cargando preparaciones...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('preparation-form');
+        const preparationIdInput = document.getElementById('preparation_id');
+        const formTitle = document.getElementById('preparation-form-title');
+        const saveButton = document.getElementById('btn-save-preparation');
+        const clearButton = document.getElementById('btn-clear-prep-form');
+        const tableBody = document.getElementById('preparations-table-body');
+        const numServingsInput = document.getElementById('prep_num_servings');
+        
+        // Referencias para la sección de información nutricional (sin cambios)
+        const nutriInfoSection = document.getElementById('nutritional-info-per-serving');
+        const nutriCalories = document.getElementById('nutri_calories');
+        const nutriProtein = document.getElementById('nutri_protein');
+        const nutriCarb = document.getElementById('nutri_carb');
+        const nutriFat = document.getElementById('nutri_fat');
+        const nutriMicrosList = document.getElementById('nutri_micros');
+
+        // Contenedor para filas de ingredientes y botón para añadir
+        const ingredientsContainer = document.getElementById('ingredient-rows-container');
+        const addIngredientButton = document.getElementById('btn-add-ingredient');
+
+        let tagifyTags;
+        const tagsInputElement = document.querySelector('input[name=suitability_tags]');
+        if (tagsInputElement) {
+            tagifyTags = new Tagify(tagsInputElement, {
+                delimiters: ",| ",
+                maxTags: 10,
+                dropdown: { enabled: 0 },
+                originalInputValueFormat: valuesArr => valuesArr.map(item => item.value).join(',')
+            });
+        }
+
+        // --- Funciones para Ingredientes Dinámicos ---
+        function addIngredientRow(ingredient = { item: '', quantity: '', unit: '' }) {
+            const newRow = document.createElement('div');
+            newRow.classList.add('ingredient-row', 'row', 'g-2', 'mb-2', 'align-items-center');
+            newRow.innerHTML = `
+                <div class="col-md-5">
+                    <input type="text" class="form-control form-control-sm ingredient-name" placeholder="Nombre del Ingrediente" value="${ingredient.item || ''}" required>
+                </div>
+                <div class="col-md-3">
+                    <input type="number" class="form-control form-control-sm ingredient-quantity" placeholder="Cantidad" step="any" value="${ingredient.quantity || ''}" required>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select form-select-sm ingredient-unit" required>
+                        <option value="" ${ingredient.unit === '' ? 'selected' : ''}>Unidad...</option>
+                        <option value="g" ${ingredient.unit === 'g' ? 'selected' : ''}>g (gramos)</option>
+                        <option value="ml" ${ingredient.unit === 'ml' ? 'selected' : ''}>ml (mililitros)</option>
+                        <option value="taza" ${ingredient.unit === 'taza' ? 'selected' : ''}>taza</option>
+                        <option value="cucharada" ${ingredient.unit === 'cucharada' ? 'selected' : ''}>cucharada</option>
+                        <option value="cucharadita" ${ingredient.unit === 'cucharadita' ? 'selected' : ''}>cucharadita</option>
+                        <option value="unidad" ${ingredient.unit === 'unidad' ? 'selected' : ''}>unidad</option>
+                        <option value="pizca" ${ingredient.unit === 'pizca' ? 'selected' : ''}>pizca</option>
+                        <!-- Puedes añadir más unidades o cargarlas dinámicamente -->
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <button type="button" class="btn btn-danger btn-sm remove-ingredient-btn w-100" title="Eliminar ingrediente">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `;
+            ingredientsContainer.appendChild(newRow);
+            // Asignar evento al botón de eliminar de la nueva fila
+            newRow.querySelector('.remove-ingredient-btn').addEventListener('click', function() {
+                newRow.remove();
+            });
+            // Seleccionar la unidad correcta si viene en el objeto ingredient
+            if (ingredient.unit) {
+                const unitSelect = newRow.querySelector('.ingredient-unit');
+                unitSelect.value = ingredient.unit;
+            }
+        }
+
+        addIngredientButton.addEventListener('click', function() {
+            addIngredientRow();
+        });
+        
+        // --- Fin Funciones para Ingredientes Dinámicos ---
+
+
+        async function loadPreparations() {
+            tableBody.innerHTML = '<tr><td colspan="4" class="text-center">Cargando preparaciones...</td></tr>';
+            try {
+                const response = await fetch('/api/preparations');
+                if (!response.ok) throw new Error(`Error al cargar preparaciones: ${response.statusText}`);
+                const preparations = await response.json();
+
+                tableBody.innerHTML = ''; 
+                if (preparations.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="4" class="text-center">No hay preparaciones guardadas.</td></tr>';
+                    return;
+                }
+
+                preparations.forEach(prep => {
+                    const row = tableBody.insertRow();
+                    row.insertCell().textContent = prep.name;
+                    row.insertCell().textContent = prep.preparation_type || 'N/A';
+                    row.insertCell().textContent = prep.suitability_tags ? prep.suitability_tags.join(', ') : '';
+                    
+                    const actionsCell = row.insertCell();
+                    actionsCell.classList.add('text-end');
+                    const editButton = document.createElement('button');
+                    editButton.classList.add('btn', 'btn-sm', 'btn-outline-primary', 'me-1');
+                    editButton.innerHTML = '<i class="fas fa-edit"></i> Editar';
+                    editButton.onclick = () => editPreparation(prep.id);
+                    actionsCell.appendChild(editButton);
+
+                    const deleteButton = document.createElement('button');
+                    deleteButton.classList.add('btn', 'btn-sm', 'btn-outline-danger');
+                    deleteButton.innerHTML = '<i class="fas fa-trash"></i> Eliminar';
+                    deleteButton.onclick = () => deletePreparation(prep.id, prep.name);
+                    actionsCell.appendChild(deleteButton);
+                });
+            } catch (error) {
+                console.error('Error cargando preparaciones:', error);
+                tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error al cargar preparaciones.</td></tr>';
+            }
+        }
+
+        function resetForm() {
+            form.reset();
+            preparationIdInput.value = '';
+            formTitle.innerHTML = '<i class="fas fa-plus-circle"></i> Añadir Nueva Preparación';
+            saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Preparación';
+            numServingsInput.value = 1; 
+            nutriInfoSection.style.display = 'none'; 
+            nutriCalories.textContent = '--'; nutriProtein.textContent = '--';
+            nutriCarb.textContent = '--'; nutriFat.textContent = '--';
+            nutriMicrosList.innerHTML = ''; 
+            if (tagifyTags) {
+                tagifyTags.removeAllTags();
+            }
+            // Limpiar filas de ingredientes y añadir una vacía
+            ingredientsContainer.innerHTML = '';
+            addIngredientRow(); 
+        }
+
+        async function editPreparation(id) {
+            try {
+                const response = await fetch(`/api/preparations/${id}`);
+                if (!response.ok) throw new Error(`Error al obtener preparación: ${response.statusText}`);
+                const prep = await response.json();
+
+                preparationIdInput.value = prep.id;
+                document.getElementById('prep_name').value = prep.name;
+                document.getElementById('prep_type').value = prep.preparation_type || '';
+                document.getElementById('prep_description').value = prep.description || '';
+                numServingsInput.value = prep.num_servings || 1; 
+                
+                // Limpiar filas existentes y poblar con los ingredientes de la preparación
+                ingredientsContainer.innerHTML = ''; // Limpiar antes de añadir
+                if (prep.ingredients && prep.ingredients.length > 0) {
+                    prep.ingredients.forEach(ing => {
+                        addIngredientRow(ing); // La función addIngredientRow ahora acepta un objeto ingrediente
+                    });
+                } else {
+                    addIngredientRow(); // Añadir una fila vacía si no hay ingredientes
+                }
+
+                document.getElementById('prep_instructions').value = prep.instructions || '';
+                document.getElementById('prep_source').value = prep.source || '';
+
+                nutriInfoSection.style.display = 'block';
+                nutriCalories.textContent = prep.calories_per_serving !== null ? prep.calories_per_serving.toFixed(1) : '--';
+                nutriProtein.textContent = prep.protein_g_per_serving !== null ? prep.protein_g_per_serving.toFixed(1) : '--';
+                nutriCarb.textContent = prep.carb_g_per_serving !== null ? prep.carb_g_per_serving.toFixed(1) : '--';
+                nutriFat.textContent = prep.fat_g_per_serving !== null ? prep.fat_g_per_serving.toFixed(1) : '--';
+                nutriMicrosList.innerHTML = ''; 
+                if (prep.micronutrients_per_serving && Object.keys(prep.micronutrients_per_serving).length > 0) {
+                    for (const [key, value] of Object.entries(prep.micronutrients_per_serving)) {
+                        const listItem = document.createElement('li');
+                        listItem.className = 'list-group-item list-group-item-action p-1'; 
+                        listItem.textContent = `${key.replace(/_/g, ' ')}: ${typeof value === 'number' ? value.toFixed(2) : value}`;
+                        nutriMicrosList.appendChild(listItem);
+                    }
+                } else {
+                    nutriMicrosList.innerHTML = '<li class="list-group-item p-1">No disponibles</li>';
+                }
+
+                if (tagifyTags) {
+                    tagifyTags.removeAllTags();
+                    if (prep.suitability_tags && prep.suitability_tags.length > 0) {
+                        tagifyTags.addTags(prep.suitability_tags);
+                    }
+                }
+
+                formTitle.innerHTML = '<i class="fas fa-edit"></i> Editar Preparación';
+                saveButton.innerHTML = '<i class="fas fa-save"></i> Actualizar Preparación';
+                window.scrollTo({ top: form.offsetTop - 70, behavior: 'smooth' }); 
+            } catch (error) {
+                console.error(`Error al editar preparación ${id}:`, error);
+                alert(`Error al cargar datos para editar: ${error.message}`);
+            }
+        }
+
+        async function deletePreparation(id, name) {
+            if (!confirm(`¿Estás seguro de que quieres eliminar la preparación "${name}"?`)) {
+                return;
+            }
+            try {
+                const response = await fetch(`/api/preparations/${id}`, { method: 'DELETE' });
+                if (!response.ok) {
+                     const errorData = await response.json().catch(() => ({error: `Error al eliminar: ${response.statusText}`}));
+                     throw new Error(errorData.error);
+                }
+                alert(`Preparación "${name}" eliminada correctamente.`);
+                loadPreparations(); 
+            } catch (error) {
+                console.error(`Error al eliminar preparación ${id}:`, error);
+                alert(`Error al eliminar preparación: ${error.message}`);
+            }
+        }
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const prepId = preparationIdInput.value;
+            const method = prepId ? 'PUT' : 'POST';
+            const url = prepId ? `/api/preparations/${prepId}` : '/api/preparations';
+
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Recolectar ingredientes de las filas dinámicas
+            const ingredients = [];
+            const ingredientRows = document.querySelectorAll('#ingredient-rows-container .ingredient-row');
+            let allIngredientsValid = true;
+            ingredientRows.forEach(row => {
+                const nameInput = row.querySelector('.ingredient-name');
+                const quantityInput = row.querySelector('.ingredient-quantity');
+                const unitSelect = row.querySelector('.ingredient-unit');
+
+                const itemName = nameInput ? nameInput.value.trim() : '';
+                const itemQuantity = quantityInput ? quantityInput.value.trim() : '';
+                const itemUnit = unitSelect ? unitSelect.value.trim() : '';
+
+                if (itemName) { // Solo procesar si hay nombre de ingrediente
+                    if (!itemQuantity || !itemUnit) {
+                        allIngredientsValid = false;
+                        // Podrías marcar los campos inválidos aquí o mostrar un mensaje más específico
+                    }
+                    ingredients.push({
+                        item: itemName,
+                        quantity: itemQuantity || null, 
+                        unit: itemUnit || null 
+                    });
+                }
+            });
+
+            if (!allIngredientsValid) {
+                alert('Por favor, completa la cantidad y unidad para todos los ingredientes listados.');
+                return;
+            }
+             if (ingredients.length === 0 && method === 'POST') { // Solo requerir al crear
+                alert('Debes añadir al menos un ingrediente a la preparación.');
+                return;
+            }
+
+            data.ingredients = ingredients;
+            // Ya no se usa ingredients_text
+            // delete data.ingredients_text; 
+
+            if (data.suitability_tags && typeof data.suitability_tags === 'string') {
+                 data.suitability_tags = data.suitability_tags.split(',').map(tag => tag.trim()).filter(tag => tag);
+            } else {
+                 data.suitability_tags = []; 
+            }
+
+            data.num_servings = parseFloat(data.num_servings) || 1.0;
+            if (data.num_servings <= 0) {
+                data.num_servings = 1.0; 
+            }
+            
+            if (!data.source || data.source.trim() === "") {
+                data.source = "creada_usuario";
+            }
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || `Error ${response.status}`);
+                
+                alert(prepId ? 'Preparación actualizada correctamente.' : 'Preparación guardada correctamente.');
+                resetForm();
+                loadPreparations();
+            } catch (error) {
+                console.error('Error al guardar preparación:', error);
+                alert(`Error al guardar: ${error.message}`);
+            }
+        });
+
+        clearButton.addEventListener('click', resetForm);
+
+        // Carga inicial
+        loadPreparations();
+        addIngredientRow(); // Añadir una fila de ingrediente vacía al cargar la página por primera vez
+    });
+</script>
+{% endblock %}

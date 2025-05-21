@@ -1,0 +1,93 @@
+/* Variables de Color */
+:root {
+    --primary-color: #0d6efd;
+    --secondary-color: #6c757d;
+    --success-color: #198754;
+    --info-color: #0dcaf0;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --light-color: #f8f9fa;
+    --dark-color: #212529;
+    --body-bg: #f4f7f6;
+    --card-bg: #ffffff;
+    --border-color: #dee2e6;
+    --text-color: #333;
+    --link-color: var(--primary-color);
+  }
+  
+  /* Reset de las reglas conflictivas que tenías con !important */
+  /* (Ya no quedan reglas especiales para #search-section) */
+  
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--body-bg);
+    color: var(--text-color);
+    line-height: 1.6;
+    padding-top: 70px;
+  }
+
+  /* Cada bloque lateral */
+.calc-block {
+  margin-bottom: 1.5rem; /* espacio entre filas en móviles */
+}
+
+/* Alinea el contenido y añade un poco de separación */
+.calc-value {
+  margin-bottom: 0.5rem;
+}
+
+/* Los rangos debajo */
+.calc-ranges {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.3;
+  padding: 0.5rem;
+  background: #f9f9f9;
+  border-radius: 0.25rem;
+  border: 1px solid #ddd;
+}
+
+/* Para pantallas grandes, mostrar 4 en línea */
+@media (min-width: 768px) {
+  .calc-block { /* cada uno ocupa 1/4 de ancho */
+    flex: 0 0 25%;
+    max-width: 25%;
+  }
+}
+
+/* Para pantallas pequeñas, que se apilen */
+@media (max-width: 767px) {
+  .calc-block {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+}
+
+/* En static/css/style.css, al final */
+
+.value-display.risk-bajo {
+  background-color: #e9f5e9 !important;
+  border: 2px solid #198754 !important;
+  color: #1c7430 !important;
+}
+.value-display.risk-medio {
+  background-color: #fff8e1 !important;
+  border: 2px solid #ffc107 !important;
+  color: #856404 !important;
+}
+.value-display.risk-alto {
+  background-color: #fdecea !important;
+  border: 2px solid #dc3545 !important;
+  color: #a52834 !important;
+}
+
+
+  /* ... sigue todo tu CSS exactamente igual ... */
+  
+  /* Asegúrate de eliminar estas reglas antiguas:
+  #search-section .input-group .btn { … }
+  #search-section .card-body:hover .input-group .btn { … }
+  #search-section { overflow: visible !important; }
+  */
+  
+  

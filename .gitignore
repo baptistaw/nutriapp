@@ -1,0 +1,23 @@
+# Entorno Virtual
+venv/
+.venv/
+
+# Archivos compilados Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de configuración local/secreta
+.env
+instance/
+credentials.json
+token.json
+
+# Bases de datos SQLite
+*.db
+*.sqlite3
+
+# Otros
+.DS_Store
+*.log
