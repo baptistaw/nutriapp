@@ -103,7 +103,7 @@
                                 {% endif %}
                             </div>
                             <div class="col-md-4 text-md-end btn-action-group">
-                                <a href="{{ url_for('editar_evaluacion', evaluation_id=eval.id) }}" class="btn btn-sm btn-outline-warning" title="Editar esta evaluación">
+                                <a href="{{ url_for('editar_evaluacion_form', evaluation_id=eval.id) }}" class="btn btn-sm btn-outline-warning" title="Editar esta evaluación">
                                     <i class="fas fa-edit"></i> Editar
                                 </a>
                                 <a href="{{ url_for('ver_pdf', evaluation_id=eval.id) }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Ver PDF Completo (Profesional)">

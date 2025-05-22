@@ -2192,13 +2192,13 @@ def generar_plan_endpoint():
         app.logger.error(f"Error inesperado en /generar_plan: {e}", exc_info=True)
         traceback.print_exc() 
         return jsonify({'error': 'Ocurrió un error inesperado al generar el plan.'}), 500
-
-@app.route('/finalizar_guardar_enviar', methods=['POST'])
-def finalizar_guardar_enviar():
+@app.route('/guardar_evaluacion', methods=['POST'])
+def guardar_evaluacion():
     try:
-        app.logger.info("Iniciando /finalizar_guardar_enviar (NUEVA EVALUACIÓN)")
+        app.logger.info("Iniciando /guardar_evaluacion (NUEVA EVALUACIÓN)")
         data = request.json
         plan_data = data.get('plan_data') 
+        # 'plan_data' here is currentPlanDataBaseData from frontend, which is plan_input_data_complete from /generar_plan
         edited_plan_text = data.get('edited_plan_text') 
         user_observations = data.get('user_observations', '')
 
@@ -2727,104 +2727,13 @@ def editar_paciente(patient_id):
                            purchasing_power_levels=app.config['PURCHASING_POWER_LEVELS'])
 
 @app.route('/evaluacion/<int:evaluation_id>/editar', methods=['GET', 'POST'])
-def editar_evaluacion(evaluation_id):
+def editar_evaluacion_form(evaluation_id): # Renamed to avoid conflict, will only handle GET
     evaluation = Evaluation.query.get_or_404(evaluation_id)
     patient = evaluation.patient
     if not patient:
         app.logger.error(f"Error crítico: Evaluación ID {evaluation_id} no tiene paciente asociado.")
-        flash("Error: La evaluación no está asociada a ningún paciente.", "danger")
+        flash("Error: La evaluación no está asociada a ningún paciente.", "danger") # Should not happen with get_or_404
         return redirect(url_for('pacientes_dashboard'))
-
-    if request.method == 'POST':
-        try:
-            app.logger.info(f"Iniciando POST para editar Evaluación ID: {evaluation_id}")
-            data = request.json
-            plan_data = data.get('plan_data')
-            edited_plan_text = data.get('edited_plan_text')
-            user_observations = data.get('user_observations', '')
-
-            if not plan_data or not edited_plan_text:
-                app.logger.warning(f"Faltan datos del plan o texto del plan al editar Evaluación ID: {evaluation_id}")
-                return jsonify({'error': 'Faltan datos del plan o texto del plan.'}), 400
-            
-            # --- Validación y Preparación de Datos de la Evaluación ---
-            v_data = {}
-            try:
-                v_data['weight_at_eval'] = validate_numeric_field(plan_data.get('weight_at_plan'), "Peso en evaluación", min_val=1, max_val=500)
-                v_data['wrist_circumference_cm'] = validate_numeric_field(plan_data.get('wrist_circumference_cm'), "Perímetro de muñeca", min_val=5, max_val=40)
-                v_data['waist_circumference_cm'] = validate_numeric_field(plan_data.get('waist_circumference_cm'), "Perímetro de cintura", min_val=30, max_val=300)
-                v_data['hip_circumference_cm'] = validate_numeric_field(plan_data.get('hip_circumference_cm'), "Perímetro de cadera", min_val=30, max_val=300)
-                v_data['gestational_age_weeks'] = validate_numeric_field(plan_data.get('gestational_age_weeks'), "Edad gestacional", type_converter=int, min_val=0, max_val=45)
-                v_data['activity_factor'] = validate_numeric_field(plan_data.get('activity_factor'), "Factor de actividad", allowed_values=[val[0] for val in app.config['ACTIVITY_FACTORS']])
-                v_data['target_weight'] = validate_numeric_field(plan_data.get('target_weight'), "Peso objetivo", min_val=1, max_val=500)
-                v_data['target_waist_cm'] = validate_numeric_field(plan_data.get('target_waist_cm'), "Cintura objetivo", min_val=30, max_val=300)
-                v_data['target_protein_perc'] = validate_numeric_field(plan_data.get('target_protein_perc'), "Porcentaje de proteínas", min_val=0, max_val=100)
-                v_data['target_carb_perc'] = validate_numeric_field(plan_data.get('target_carb_perc'), "Porcentaje de carbohidratos", min_val=0, max_val=100)
-                v_data['target_fat_perc'] = validate_numeric_field(plan_data.get('target_fat_perc'), "Porcentaje de grasas", min_val=0, max_val=100)
-
-                # Validación de Micronutrientes
-                micronutrients_input = plan_data.get('micronutrients', {})
-                v_data['mic_k'] = validate_numeric_field(micronutrients_input.get('potassium_mg'), "Potasio (mg)", min_val=0, max_val=10000)
-                v_data['mic_ca'] = validate_numeric_field(micronutrients_input.get('calcium_mg'), "Calcio (mg)", min_val=0, max_val=5000)
-                v_data['mic_na'] = validate_numeric_field(micronutrients_input.get('sodium_mg'), "Sodio (mg)", min_val=0, max_val=5000)
-                v_data['mic_chol'] = validate_numeric_field(micronutrients_input.get('cholesterol_mg'), "Colesterol (mg)", min_val=0, max_val=1000)
-            except ValueError as ve: # Captura errores de validate_numeric_field
-                return jsonify({'error': str(ve)}), 400
-
-            # Actualizar campos de la evaluación existente
-            evaluation.weight_at_eval = v_data.get('weight_at_eval')
-            evaluation.wrist_circumference_cm = v_data.get('wrist_circumference_cm')
-            evaluation.waist_circumference_cm = v_data.get('waist_circumference_cm')
-            evaluation.hip_circumference_cm = v_data.get('hip_circumference_cm')
-            evaluation.gestational_age_weeks = v_data.get('gestational_age_weeks', evaluation.gestational_age_weeks) # Mantener valor anterior si None
-            evaluation.activity_factor = v_data.get('activity_factor', evaluation.activity_factor) # Mantener valor anterior si None
-
-            # Campos calculados (se asume que vienen correctos de /calcular_valores o se recalcularían si fuera necesario)
-            evaluation.calculated_imc = plan_data.get('calculated_imc')
-            evaluation.calculated_complexion = plan_data.get('calculated_complexion')
-            evaluation.calculated_waist_hip_ratio = plan_data.get('calculated_waist_hip_ratio')
-            evaluation.calculated_waist_height_ratio = plan_data.get('calculated_waist_height_ratio')
-            evaluation.calculated_ideal_weight = plan_data.get('calculated_ideal_weight')
-            evaluation.calculated_calories = plan_data.get('calculated_calories')
-            evaluation.imc_risk = plan_data.get('imc_risk')
-            evaluation.whr_risk = plan_data.get('whr_risk')
-            evaluation.whtr_risk = plan_data.get('whtr_risk')
-
-            evaluation.set_pathologies(plan_data.get('pathologies', []))
-            evaluation.other_pathologies_text = plan_data.get('other_pathologies_text')
-            evaluation.postoperative_text = plan_data.get('postoperative_text')
-            evaluation.diet_type = plan_data.get('diet_type')
-            evaluation.other_diet_type_text = plan_data.get('other_diet_type_text')
-            evaluation.target_weight = v_data.get('target_weight')
-            evaluation.target_waist_cm = v_data.get('target_waist_cm')
-            evaluation.target_protein_perc = v_data.get('target_protein_perc')
-            evaluation.target_carb_perc = v_data.get('target_carb_perc')
-            evaluation.target_fat_perc = v_data.get('target_fat_perc')
-
-            evaluation.edited_plan_text = edited_plan_text
-            evaluation.user_observations = user_observations
-            evaluation.structured_plan_input_json = json.dumps(plan_data) # Guardar el input completo
-
-            references_from_frontend = plan_data.get('references')
-            if references_from_frontend:
-                evaluation.references = references_from_frontend # Usar el setter
-
-            # Asignar micronutrientes validados
-            micronutrients_to_set = {
-                'potassium_mg': v_data.get('mic_k'), 'calcium_mg': v_data.get('mic_ca'),
-                'sodium_mg': v_data.get('mic_na'), 'cholesterol_mg': v_data.get('mic_chol')
-            }
-            evaluation.set_micronutrients({k: v for k, v in micronutrients_to_set.items() if v is not None})
-            evaluation.set_base_foods(plan_data.get('base_foods', []))
-
-            db.session.commit()
-            app.logger.info(f"Evaluación ID {evaluation_id} actualizada exitosamente.")
-            return jsonify({'message': f'Evaluación ID {evaluation_id} actualizada correctamente.', 'patient_id': patient.id, 'evaluation_id': evaluation.id})
-
-        except Exception as e:
-            db.session.rollback()
-            app.logger.error(f"Error al actualizar Evaluación ID {evaluation_id}: {e}", exc_info=True)
-            return jsonify({'error': 'Error inesperado al actualizar la evaluación.'}), 500
 
     # Método GET: Mostrar el formulario con los datos de la evaluación
     app.logger.info(f"Accediendo al formulario para EDITAR Evaluación ID: {evaluation_id}")
@@ -2879,6 +2788,115 @@ def editar_evaluacion(evaluation_id):
                            current_username="Nutri_Demo", # O el usuario logueado
                            current_date_str=evaluation.consultation_date.strftime('%d/%m/%Y') # Usar fecha de la evaluación
                            )
+@app.route('/actualizar_evaluacion/<int:evaluation_id>', methods=['PUT'])
+def actualizar_evaluacion_endpoint(evaluation_id):
+    evaluation = Evaluation.query.get_or_404(evaluation_id)
+    patient = evaluation.patient
+    if not patient:
+        app.logger.error(f"Error crítico: Evaluación ID {evaluation_id} no tiene paciente asociado para actualizar.")
+        return jsonify({'error': "Error: La evaluación no está asociada a ningún paciente."}), 500
+
+    try:
+        app.logger.info(f"Iniciando PUT para actualizar Evaluación ID: {evaluation_id}")
+        data = request.json
+        # 'plan_data' aquí es currentPlanDataBaseData del frontend, que es plan_input_data_complete de /generar_plan
+        plan_data = data.get('plan_data') 
+        edited_plan_text = data.get('edited_plan_text')
+        user_observations = data.get('user_observations', '')
+
+        if not plan_data or not edited_plan_text:
+            app.logger.warning(f"Faltan datos del plan o texto del plan al actualizar Evaluación ID: {evaluation_id}")
+            return jsonify({'error': 'Faltan datos del plan o texto del plan.'}), 400
+        
+        # --- Actualizar Datos del Paciente (si vienen en plan_data) ---
+        # Esto es importante si el usuario editó datos del paciente en el formulario
+        # antes de volver a generar/finalizar un plan existente.
+        patient.name = plan_data.get('name', patient.name)
+        patient.surname = plan_data.get('surname', patient.surname)
+        if plan_data.get('dob'):
+            patient.dob = datetime.strptime(plan_data['dob'], '%Y-%m-%d').date()
+        patient.sex = plan_data.get('sex', patient.sex)
+        patient.height_cm = plan_data.get('height_cm', patient.height_cm)
+        
+        # Email uniqueness check if email is being changed
+        new_email = plan_data.get('email', '').strip()
+        if new_email and new_email != patient.email:
+            existing_patient_with_new_email = Patient.query.filter(Patient.email == new_email, Patient.id != patient.id).first()
+            if existing_patient_with_new_email:
+                return jsonify({'error': f"El email '{new_email}' ya está registrado para otro paciente."}), 400
+        patient.email = new_email if new_email else patient.email # Update if new_email is not empty
+
+        patient.phone_number = plan_data.get('phone_number', patient.phone_number)
+        patient.education_level = plan_data.get('education_level', patient.education_level)
+        patient.purchasing_power = plan_data.get('purchasing_power', patient.purchasing_power)
+        patient.set_allergies(plan_data.get('allergies', patient.get_allergies()))
+        patient.set_intolerances(plan_data.get('intolerances', patient.get_intolerances()))
+        patient.set_preferences(plan_data.get('preferences', patient.get_preferences()))
+        patient.set_aversions(plan_data.get('aversions', patient.get_aversions()))
+
+        # --- Validación y Preparación de Datos de la Evaluación ---
+        v_data = {}
+        try:
+            v_data['weight_at_eval'] = validate_numeric_field(plan_data.get('weight_at_plan'), "Peso en evaluación", min_val=1, max_val=500)
+            v_data['wrist_circumference_cm'] = validate_numeric_field(plan_data.get('wrist_circumference_cm'), "Perímetro de muñeca", min_val=5, max_val=40)
+            # ... (todas las validaciones de validate_numeric_field como en guardar_evaluacion) ...
+            v_data['gestational_age_weeks'] = validate_numeric_field(plan_data.get('gestational_age_weeks'), "Edad gestacional", type_converter=int, min_val=0, max_val=45)
+            v_data['activity_factor'] = validate_numeric_field(plan_data.get('activity_factor'), "Factor de actividad", allowed_values=[val[0] for val in app.config['ACTIVITY_FACTORS']])
+            v_data['target_weight'] = validate_numeric_field(plan_data.get('target_weight'), "Peso objetivo", min_val=1, max_val=500)
+            v_data['target_protein_perc'] = validate_numeric_field(plan_data.get('target_protein_perc'), "Porcentaje de proteínas", min_val=0, max_val=100)
+            v_data['target_carb_perc'] = validate_numeric_field(plan_data.get('target_carb_perc'), "Porcentaje de carbohidratos", min_val=0, max_val=100)
+            v_data['target_fat_perc'] = validate_numeric_field(plan_data.get('target_fat_perc'), "Porcentaje de grasas", min_val=0, max_val=100)
+            micronutrients_input = plan_data.get('micronutrients', {})
+            v_data['mic_k'] = validate_numeric_field(micronutrients_input.get('potassium_mg'), "Potasio (mg)", min_val=0, max_val=10000)
+            v_data['mic_ca'] = validate_numeric_field(micronutrients_input.get('calcium_mg'), "Calcio (mg)", min_val=0, max_val=5000)
+            v_data['mic_na'] = validate_numeric_field(micronutrients_input.get('sodium_mg'), "Sodio (mg)", min_val=0, max_val=5000)
+            v_data['mic_chol'] = validate_numeric_field(micronutrients_input.get('cholesterol_mg'), "Colesterol (mg)", min_val=0, max_val=1000)
+        except ValueError as ve:
+            return jsonify({'error': str(ve)}), 400
+
+        # Actualizar campos de la evaluación existente
+        evaluation.weight_at_eval = v_data.get('weight_at_eval', evaluation.weight_at_eval)
+        evaluation.wrist_circumference_cm = v_data.get('wrist_circumference_cm', evaluation.wrist_circumference_cm)
+        # ... (actualizar todos los campos de v_data y plan_data para evaluation) ...
+        evaluation.gestational_age_weeks = v_data.get('gestational_age_weeks', evaluation.gestational_age_weeks)
+        evaluation.activity_factor = v_data.get('activity_factor', evaluation.activity_factor)
+        evaluation.calculated_imc=plan_data.get('calculated_imc', evaluation.calculated_imc)
+        evaluation.calculated_complexion=plan_data.get('calculated_complexion', evaluation.calculated_complexion)
+        evaluation.calculated_waist_hip_ratio=plan_data.get('calculated_waist_hip_ratio', evaluation.calculated_waist_hip_ratio)
+        evaluation.calculated_waist_height_ratio=plan_data.get('calculated_waist_height_ratio', evaluation.calculated_waist_height_ratio)
+        evaluation.calculated_ideal_weight=plan_data.get('calculated_ideal_weight', evaluation.calculated_ideal_weight)
+        evaluation.calculated_calories=plan_data.get('calculated_calories', evaluation.calculated_calories)
+        evaluation.imc_risk=plan_data.get('imc_risk', evaluation.imc_risk)
+        evaluation.whr_risk=plan_data.get('whr_risk', evaluation.whr_risk)
+        evaluation.whtr_risk=plan_data.get('whtr_risk', evaluation.whtr_risk)
+        evaluation.set_pathologies(plan_data.get('pathologies', evaluation.get_pathologies()))
+        evaluation.other_pathologies_text = plan_data.get('other_pathologies_text', evaluation.other_pathologies_text)
+        evaluation.postoperative_text = plan_data.get('postoperative_text', evaluation.postoperative_text)
+        evaluation.diet_type = plan_data.get('diet_type', evaluation.diet_type)
+        evaluation.other_diet_type_text = plan_data.get('other_diet_type_text', evaluation.other_diet_type_text)
+        evaluation.target_weight = v_data.get('target_weight', evaluation.target_weight)
+        evaluation.target_protein_perc = v_data.get('target_protein_perc', evaluation.target_protein_perc)
+        evaluation.target_carb_perc = v_data.get('target_carb_perc', evaluation.target_carb_perc)
+        evaluation.target_fat_perc = v_data.get('target_fat_perc', evaluation.target_fat_perc)
+        evaluation.edited_plan_text = edited_plan_text
+        evaluation.user_observations = user_observations
+        evaluation.structured_plan_input_json = json.dumps(plan_data)
+        evaluation.references = plan_data.get('references', evaluation.references)
+        micronutrients_to_set = {k: v_data[f"mic_{k.split('_')[0]}"] for k in ['potassium_mg', 'calcium_mg', 'sodium_mg', 'cholesterol_mg'] if v_data.get(f"mic_{k.split('_')[0]}") is not None}
+        evaluation.set_micronutrients(micronutrients_to_set if micronutrients_to_set else evaluation.get_micronutrients())
+        evaluation.set_base_foods(plan_data.get('base_foods', evaluation.get_base_foods()))
+        evaluation.consultation_date = datetime.now(timezone.utc) # Actualizar fecha de consulta a la de la modificación
+
+        db.session.commit()
+        app.logger.info(f"Evaluación ID {evaluation_id} actualizada exitosamente.")
+        # Considerar si se debe regenerar y re-subir el PDF a Drive aquí si el plan cambió significativamente.
+        # Por ahora, el PDF se regenerará bajo demanda si se accede a /ver_pdf y el de Drive no se encuentra.
+        return jsonify({'message': f'Evaluación ID {evaluation_id} actualizada correctamente.', 'patient_id': patient.id, 'evaluation_id': evaluation.id})
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error al actualizar Evaluación ID {evaluation_id}: {e}", exc_info=True)
+        return jsonify({'error': 'Error inesperado al actualizar la evaluación.'}), 500
 
 if __name__ == '__main__':
     with app.app_context():
