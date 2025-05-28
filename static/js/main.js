@@ -580,14 +580,13 @@ async function loadRelevantPreparationsForPatient() {
           console.log("INFO: window.selectedRelevantPreparations actualizado:", window.selectedRelevantPreparations);
       });
     }); // Fin de forEach
-  } // ESTA ES LA LLAVE DE CIERRE DEL BLOQUE 'try' ANTES DEL 'catch'
-    catch (error) {
+  } catch (error) { // Corrected: catch block now immediately follows the try block's closing brace
     console.error("Error en loadRelevantPreparationsForPatient:", error);
     relevantPreparationsContainer.innerHTML = `<p class="text-danger">Error al cargar preparaciones: ${error.message}</p>`;
     placeholder.style.display = 'none';
   }
+} // Corrected: This brace now correctly closes the loadRelevantPreparationsForPatient function
 
-} // ESTA ES LA LLAVE DE CIERRE DEL BLOQUE 'try' ANTES DEL 'catch'
 // Corregido: Asegurar que no haya 'a' extra y que la función esté bien definida.
 async function generarPlan() { // Línea 590 en tu log
   console.log("%c!!!!!! generarPlan function CALLED !!!!!!", "color: green; font-weight: bold; font-size: 1.2em;"); // Diagnostic log

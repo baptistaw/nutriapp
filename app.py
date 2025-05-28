@@ -1248,10 +1248,10 @@ def parse_all_recipes_from_text_block(recetario_text):
     if not recetario_text or recetario_text.strip() == "No se pudieron parsear las recetas detalladas." or "Error:" in recetario_text :
         app.logger.warning("Texto del recetario vacío o con error previo. No se parsearán recetas.")
         return []
-        
+
     app.logger.debug(f"Texto del recetario recibido (primeros 1000 chars):\n{recetario_text[:1000]}")
     recipes = []
-    
+
     recipe_blocks_raw = re.split(r"\n(?=Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*.+)", recetario_text, flags=re.IGNORECASE)
     app.logger.debug(f"Bloques crudos después del split inicial: {len(recipe_blocks_raw)}")
 
@@ -1259,16 +1259,16 @@ def parse_all_recipes_from_text_block(recetario_text):
         block_text = block_text_raw.strip()
         if not block_text:
             continue
-        
+
         if i == 0 and "== RECETARIO DETALLADO ==" in block_text:
             block_text = re.sub(r"== RECETARIO DETALLADO ==","", block_text, flags=re.IGNORECASE).strip()
             if not block_text:
                 continue
-        
+
         app.logger.debug(f"Procesando bloque crudo {i}: '{block_text[:200]}...'")
 
         title_match = re.match(r"(Receta\s*(?:N°|No\.|N\.)?\s*\d+):\s*(.+?)(?=\n(?:Porciones que Rinde:|Ingredientes:|Preparación:)|$)", block_text, re.IGNORECASE | re.DOTALL)
-        
+
         if not title_match:
             app.logger.warning(f"No se pudo parsear el título para el bloque: '{block_text[:150]}...'")
             continue
@@ -1283,8 +1283,8 @@ def parse_all_recipes_from_text_block(recetario_text):
         ingredients_list_for_pdf = []
         instructions_text = ""
         servings_text = ""
-        condiments_text = ""   
-        presentation_text = "" 
+        condiments_text = ""
+        presentation_text = ""
 
         servings_match = re.search(r"Porciones que Rinde:\s*(.*?)(?=\n(?:Ingredientes:|Preparación:)|$)", content_after_title, re.DOTALL | re.IGNORECASE)
         if servings_match:
@@ -1300,10 +1300,10 @@ def parse_all_recipes_from_text_block(recetario_text):
                 line = line.strip()
                 if line.startswith(('*', '-', '•')):
                     ingredient_text_cleaned = line.lstrip('*-• ').strip()
-                    if ingredient_text_cleaned: 
+                    if ingredient_text_cleaned:
                         current_ingredients.append({'raw_line': ingredient_text_cleaned})
                         app.logger.debug(f"      Ingrediente añadido (raw): '{ingredient_text_cleaned}'")
-                elif line: 
+                elif line:
                     app.logger.debug(f"      Línea en ingredientes no reconocida como viñeta: '{line}'")
             ingredients_list_for_pdf = current_ingredients
         else:
@@ -1326,9 +1326,9 @@ def parse_all_recipes_from_text_block(recetario_text):
             presentation_text = presentation_match.group(1).strip()
             app.logger.debug(f"    Presentación: {presentation_text[:100]}...")
 
-        if recipe_name and (ingredients_list_for_pdf or instructions_text): 
-            recipes.append({ 
-                'number': recipe_number_full, 
+        if recipe_name and (ingredients_list_for_pdf or instructions_text):
+            recipes.append({
+                'number': recipe_number_full,
                 'name': recipe_name,
                 'servings': servings_text,
                 'ingredients': ingredients_list_for_pdf,
@@ -1605,13 +1605,13 @@ def crear_pdf_paciente(evaluation_instance):
                     p.showPage()
                     current_y = height - y_margin
                     # Podrías volver a dibujar el título de la sección si quieres "Recetas Detalladas (Cont.)"
-                    # draw_patient_section_title("Recetas Detalladas (Cont.)") 
-                
-                for recipe in parsed_recipes:
-                    # Recipe Title
-                    if current_y < y_margin + line_height_base * 5: p.showPage(); current_y = height - y_margin; draw_patient_section_title("Recetas Detalladas (Cont.)")
-                    p.setFont("Helvetica-Bold", 12) # Recipe title larger/bolder
-                    p.drawString(x_margin + 10, current_y, f"{recipe.get('number', 'Receta N/N')}: {recipe.get('name', 'Sin Nombre')}")
+                    # draw_patient_section_title("Recetas Detalladas (Cont.)")
+                # Removed one level of looping for 'recipe in parsed_recipes' to avoid duplication.
+                # The outer loop 'for recipe in parsed_recipes:' is sufficient.
+                # Recipe Title
+                if current_y < y_margin + line_height_base * 5: p.showPage(); current_y = height - y_margin; draw_patient_section_title("Recetas Detalladas (Cont.)")
+                p.setFont("Helvetica-Bold", 12) # Recipe title larger/bolder
+                p.drawString(x_margin + 10, current_y, f"{recipe.get('number', 'Receta N/N')}: {recipe.get('name', 'Sin Nombre')}")
                     current_y -= line_height_base * 1.3
 
                     # Servings
