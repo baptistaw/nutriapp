@@ -3536,7 +3536,7 @@ def patient_chat_api(patient_id):
     elif request.method == 'POST':
         # Enviar un nuevo mensaje
         data = request.get_json()
-        if not data or 'content' not in data: # 'content' es el nombre que usa el JS
+        if not data or 'content' not in data:  # 'content' es el nombre que usa el JS
             return jsonify({'error': 'Mensaje vacío.'}), 400
 
         try:
@@ -3544,9 +3544,14 @@ def patient_chat_api(patient_id):
             if not message_text:
                 return jsonify({'error': 'Mensaje vacío.'}), 400
 
+            sender_flag = data.get('sender_is_patient')
+            if sender_flag is None:
+                # Si el flag no viene explícito, asumimos paciente si no hay usuario autenticado
+                sender_flag = not current_user.is_authenticated
+
             new_message = ChatMessage(
-                patient_id=patient.id, 
-                sender_is_patient=True, # Desde la app del paciente, el emisor es 'patient'
+                patient_id=patient.id,
+                sender_is_patient=bool(sender_flag),
                 message_text=message_text
                 # evaluation_id se puede añadir si el chat es específico de un plan
             )
@@ -3643,6 +3648,13 @@ def historial_paciente(patient_id):
                            chart_data=chart_data,
                            education_levels=app.config.get('EDUCATION_LEVELS', []),
                            purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []))
+
+@app.route('/nutricionista_chat/<int:patient_id>')
+@login_required
+def nutricionista_chat_view(patient_id):
+    """Vista de chat para el nutricionista con un paciente específico."""
+    patient = Patient.query.filter_by(id=patient_id, user_id=current_user.id).first_or_404()
+    return render_template('nutricionista_chat.html', patient=patient)
 
 @app.route('/get_all_patients', methods=['GET'])
 @login_required

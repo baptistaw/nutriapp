@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Chat con Paciente - {{ patient.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Chat con {{ patient.name }} {{ patient.surname }}</h2>
+    <hr>
+
+    <div id="chat-box" style="height: 400px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 15px; background-color: #f9f9f9;">
+        <p class="text-muted text-center">Cargando mensajes...</p>
+    </div>
+
+    <div class="input-group mb-3">
+        <input type="text" class="form-control" placeholder="Escribe tu mensaje..." id="chatMessageInput" aria-label="Mensaje">
+        <button class="btn btn-primary" type="button" id="sendChatMessageButton">Enviar</button>
+    </div>
+
+    <hr class="my-4">
+    <a href="{{ url_for('historial_paciente', patient_id=patient.id) }}" class="btn btn-secondary">Volver al Historial</a>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const chatBox = document.getElementById('chat-box');
+    const messageInput = document.getElementById('chatMessageInput');
+    const sendButton = document.getElementById('sendChatMessageButton');
+    const patientId = {{ patient.id }};
+    let pollingInterval;
+
+    function addMessageToChat(message) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('mb-2', 'p-2', 'rounded');
+
+        const senderType = message.sender_is_patient ? 'patient' : 'nutricionista';
+
+        if (senderType === 'nutricionista') {
+            messageElement.classList.add('bg-primary', 'text-white', 'ms-auto');
+            messageElement.style.maxWidth = '70%';
+            messageElement.style.textAlign = 'right';
+        } else {
+            messageElement.classList.add('bg-light', 'text-dark', 'me-auto');
+            messageElement.style.maxWidth = '70%';
+        }
+        messageElement.textContent = message.message_text || message.content;
+
+        const timestampElement = document.createElement('small');
+        timestampElement.classList.add('d-block', 'text-muted', (senderType === 'nutricionista' ? 'text-end' : 'text-start'));
+        timestampElement.style.fontSize = '0.75em';
+        timestampElement.style.marginTop = '5px';
+        timestampElement.textContent = new Date(message.timestamp).toLocaleString();
+
+        messageElement.appendChild(timestampElement);
+        chatBox.appendChild(messageElement);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function loadMessages() {
+        try {
+            const response = await fetch(`/api/patient/${patientId}/chat/messages`);
+            if (!response.ok) {
+                throw new Error(`Error al cargar mensajes: ${response.statusText}`);
+            }
+            const data = await response.json();
+            chatBox.innerHTML = '';
+            if (data.messages && data.messages.length > 0) {
+                data.messages.forEach(msg => addMessageToChat(msg));
+            } else {
+                chatBox.innerHTML = '<p class="text-muted text-center">No hay mensajes en este chat aún.</p>';
+            }
+        } catch (error) {
+            console.error("Error loading chat messages:", error);
+            chatBox.innerHTML = `<p class="text-danger text-center">Error al cargar mensajes: ${error.message}</p>`;
+        }
+    }
+
+    async function sendMessage() {
+        const messageText = messageInput.value.trim();
+        if (!messageText) return;
+
+        const messageData = {
+            content: messageText,
+            sender_is_patient: false
+        };
+
+        try {
+            const response = await fetch(`/api/patient/${patientId}/chat/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(messageData)
+            });
+
+            if (response.ok) {
+                const newMessage = await response.json();
+                const noMessagesP = chatBox.querySelector('p.text-muted.text-center');
+                if (noMessagesP && noMessagesP.textContent.includes("No hay mensajes")) {
+                    chatBox.innerHTML = '';
+                }
+                addMessageToChat(newMessage);
+                messageInput.value = '';
+            } else {
+                const errorResult = await response.json().catch(() => ({error: 'Error desconocido al enviar mensaje'}));
+                alert(`Error al enviar el mensaje: ${errorResult.error}`);
+            }
+        } catch (error) {
+            alert('Error de red al enviar el mensaje.');
+            console.error("Error sending chat message:", error);
+        }
+    }
+
+    sendButton.addEventListener('click', sendMessage);
+    messageInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    function startPolling() {
+        if (pollingInterval) clearInterval(pollingInterval);
+        pollingInterval = setInterval(loadMessages, 5000);
+        console.log('Chat polling started for nutritionist view.');
+    }
+
+    loadMessages();
+    startPolling();
+});
+</script>
+{% endblock %}
