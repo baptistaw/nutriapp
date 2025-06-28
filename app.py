@@ -2912,6 +2912,7 @@ def generar_plan_endpoint():
         traceback.print_exc() 
         return jsonify({'error': 'Ocurrió un error inesperado al generar el plan.'}), 500
 @app.route('/guardar_evaluacion', methods=['POST'])
+@firebase_auth_required
 def guardar_evaluacion():
     try:
         app.logger.info("Iniciando /guardar_evaluacion (NUEVA EVALUACIÓN)")
@@ -3137,10 +3138,11 @@ def guardar_evaluacion():
                             num_servings_for_prep_fav = 1.0
                             
                         new_preparation = UserPreparation(
+                            user_id=g.user.id,
                             name=actual_recipe_name_from_recetario,
                             description=parsed_recipe_data.get('description', "Receta generada por IA y marcada como favorita."),
                             instructions=parsed_recipe_data.get('instructions', "Instrucciones no parseadas."),
-                            preparation_type=parsed_recipe_data.get('preparation_type', 'almuerzo'), 
+                            preparation_type=parsed_recipe_data.get('preparation_type', 'almuerzo'),
                             num_servings=num_servings_for_prep_fav,
                             source='favorita_ia_finalizar'
                         )
@@ -3243,6 +3245,7 @@ def guardar_evaluacion():
         return jsonify({'error': 'Error inesperado al guardar la evaluación.'}), 500
 
 @app.route('/actualizar_evaluacion/<int:evaluation_id>', methods=['PUT'])
+@firebase_auth_required
 def actualizar_evaluacion_endpoint(evaluation_id):
     evaluation = Evaluation.query.get_or_404(evaluation_id)
     patient = evaluation.patient
@@ -3405,10 +3408,11 @@ def actualizar_evaluacion_endpoint(evaluation_id):
                             num_servings_for_prep_fav_update = 1.0
                             
                         new_preparation = UserPreparation(
+                            user_id=g.user.id,
                             name=actual_recipe_name_from_recetario,
                             description=parsed_recipe_data.get('description', "Receta generada por IA y marcada como favorita."),
                             instructions=parsed_recipe_data.get('instructions', "Instrucciones no parseadas."),
-                            preparation_type=parsed_recipe_data.get('preparation_type', 'almuerzo'), 
+                            preparation_type=parsed_recipe_data.get('preparation_type', 'almuerzo'),
                             num_servings=num_servings_for_prep_fav_update,
                             source='favorita_ia_finalizar'
                         )
@@ -4016,7 +4020,7 @@ def delete_user_preparation(preparation_id):
         return jsonify({'error': 'Error interno al eliminar la preparación.'}), 500
 
 @app.route('/api/favorite_generated_preparation', methods=['POST'])
-# @login_required # Or remove if you don't have login implemented yet
+@firebase_auth_required
 def favorite_generated_preparation():
     data = request.get_json()
     if not data or 'recipe_name' not in data or 'full_plan_text' not in data:
@@ -4037,14 +4041,8 @@ def favorite_generated_preparation():
         return jsonify({'error': f"No se pudo parsear la receta '{recipe_name_to_find}' del texto del plan."}), 400
 
     try:
-        user_id_for_prep = None
-        # if hasattr(current_user, 'id') and current_user.is_authenticated:
-        # user_id_for_prep = current_user.id
-        # elif hasattr(g, 'user') and g.user and hasattr(g.user, 'id'): # Comprobación adicional para g.user.id
-        # user_id_for_prep = g.user.id
-
         new_preparation = UserPreparation(
-            # user_id=user_id_for_prep, # Temporarily remove or keep commented if User model/login is not ready
+            user_id=g.user.id,
             name=parsed_recipe_data.get('name', recipe_name_to_find), # Usar el nombre parseado de la receta
             description=parsed_recipe_data.get('description', "Receta generada por IA y marcada como favorita."),
             instructions=parsed_recipe_data.get('instructions', "Instrucciones no parseadas."),
