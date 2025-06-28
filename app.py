@@ -1597,66 +1597,71 @@ def crear_pdf_paciente(evaluation_instance):
                 p.showPage()
                 current_y = height - y_margin
             
-            draw_patient_section_title("Recetas Detalladas") # Título para la sección de recetas
 
-            for recipe in parsed_recipes:
-                # Recipe Title
-                if current_y < y_margin + line_height_base * 5: 
-                    p.showPage()
-                    current_y = height - y_margin
-                    # Podrías volver a dibujar el título de la sección si quieres "Recetas Detalladas (Cont.)"
-                    # draw_patient_section_title("Recetas Detalladas (Cont.)")
-                # Removed one level of looping for 'recipe in parsed_recipes' to avoid duplication.
-                # The outer loop 'for recipe in parsed_recipes:' is sufficient.
-                # Recipe Title
-                if current_y < y_margin + line_height_base * 5: p.showPage(); current_y = height - y_margin; draw_patient_section_title("Recetas Detalladas (Cont.)")
-                p.setFont("Helvetica-Bold", 12) # Recipe title larger/bolder
-                p.drawString(x_margin + 10, current_y, f"{recipe.get('number', 'Receta N/N')}: {recipe.get('name', 'Sin Nombre')}")
+                draw_patient_section_title("Recetas Detalladas")  # Título para la sección de recetas
+
+                for recipe in parsed_recipes:
+                    # Recipe Title
+                    if current_y < y_margin + line_height_base * 5:
+                        p.showPage()
+                        current_y = height - y_margin
+                        # draw_patient_section_title("Recetas Detalladas (Cont.)")
+
+                    p.setFont("Helvetica-Bold", 12)  # Recipe title larger/bolder
+                    p.drawString(x_margin + 10, current_y, f"{recipe.get('number', 'Receta N/N')}: {recipe.get('name', 'Sin Nombre')}")
                     current_y -= line_height_base * 1.3
 
                     # Servings
                     if recipe.get('servings'):
-                         p.setFont("Helvetica-Oblique", 10) # Italic for servings
-                         p.drawString(x_margin + 20, current_y, f"Rinde: {recipe['servings']}")
-                         current_y -= line_height_base * 1.2
+                        p.setFont("Helvetica-Oblique", 10)  # Italic for servings
+                        p.drawString(x_margin + 20, current_y, f"Rinde: {recipe['servings']}")
+                        current_y -= line_height_base * 1.2
 
                     # Ingredients
                     if recipe.get('ingredients'):
-                        p.setFont("Helvetica-Bold", 10.5) # Bold for Ingredients label
+                        p.setFont("Helvetica-Bold", 10.5)  # Bold for Ingredients label
                         p.drawString(x_margin + 20, current_y, "Ingredientes:")
                         current_y -= line_height_base * 1.2
-                        p.setFont("Helvetica", 10.5) # Normal font for ingredient list
+                        p.setFont("Helvetica", 10.5)  # Normal font for ingredient list
                         for ing in recipe['ingredients']:
-                             if current_y < y_margin + line_height_base: p.showPage(); p.setFont("Helvetica", 10.5); current_y = height - y_margin
-                             p.drawString(x_margin + 30, current_y, f"• {ing.get('raw_line', ing.get('item', 'Ingrediente desconocido')).lstrip('*\s').strip()}")
-                             current_y -= line_height_base * 1.1
-                        current_y -= line_height_base * 0.6 # Space after ingredients
+                            if current_y < y_margin + line_height_base:
+                                p.showPage()
+                                p.setFont("Helvetica", 10.5)
+                                current_y = height - y_margin
+                                p.drawString(x_margin + 30, current_y, "• " + ing.get('raw_line', ing.get('item', 'Ingrediente desconocido')).lstrip("*\s").strip())
+                            current_y -= line_height_base * 1.1
+                        current_y -= line_height_base * 0.6  # Space after ingredients
 
                     # Preparation
                     if recipe.get('instructions'):
-                        p.setFont("Helvetica-Bold", 10.5) # Bold for Preparation label
+                        p.setFont("Helvetica-Bold", 10.5)  # Bold for Preparation label
                         p.drawString(x_margin + 20, current_y, "Preparación:")
                         current_y -= line_height_base * 1.2
-                        p.setFont("Helvetica", 10.5) # Normal font for instructions
-                        # Split instructions by numbered steps if possible, otherwise treat as block
+                        p.setFont("Helvetica", 10.5)  # Normal font for instructions
                         instruction_steps = re.split(r"^\s*(\d+\.)\s*", recipe['instructions'], flags=re.MULTILINE)
-                        if len(instruction_steps) > 1 and instruction_steps[0] == '': # Looks like numbered steps
+                        if len(instruction_steps) > 1 and instruction_steps[0] == '':
                             for i in range(1, len(instruction_steps), 2):
                                 step_number = instruction_steps[i].strip()
                                 step_text = instruction_steps[i+1].strip() if (i+1) < len(instruction_steps) else ""
                                 if step_text:
-                                    step_lines = simpleSplit(f"{step_number} {step_text}", p._fontname, p._fontsize, max_width - 30) # Indent for step number
+                                    step_lines = simpleSplit(f"{step_number} {step_text}", p._fontname, p._fontsize, max_width - 30)
                                     for line in step_lines:
-                                         if current_y < y_margin + line_height_base: p.showPage(); p.setFont("Helvetica", 10.5); current_y = height - y_margin
-                                         p.drawString(x_margin + 30, current_y, line.strip())
-                                         current_y -= line_height_base * 1.1
-                        else: # Not numbered steps, treat as a single block
-                            instruction_lines = simpleSplit(recipe['instructions'], p._fontname, p._fontsize, max_width - 20) # Indent slightly
+                                        if current_y < y_margin + line_height_base:
+                                            p.showPage()
+                                            p.setFont("Helvetica", 10.5)
+                                            current_y = height - y_margin
+                                        p.drawString(x_margin + 30, current_y, line.strip())
+                                        current_y -= line_height_base * 1.1
+                        else:
+                            instruction_lines = simpleSplit(recipe['instructions'], p._fontname, p._fontsize, max_width - 20)
                             for line in instruction_lines:
-                                if current_y < y_margin + line_height_base: p.showPage(); p.setFont("Helvetica", 10.5); current_y = height - y_margin
+                                if current_y < y_margin + line_height_base:
+                                    p.showPage()
+                                    p.setFont("Helvetica", 10.5)
+                                    current_y = height - y_margin
                                 p.drawString(x_margin + 30, current_y, line.strip())
                                 current_y -= line_height_base * 1.1
-                        current_y -= line_height_base * 0.6 # Space after preparation
+                        current_y -= line_height_base * 0.6  # Space after preparation
 
                     # Condiments (Optional)
                     if recipe.get('condiments'):
@@ -1666,9 +1671,12 @@ def crear_pdf_paciente(evaluation_instance):
                         p.setFont("Helvetica", 10.5)
                         condiment_lines = simpleSplit(recipe['condiments'], p._fontname, p._fontsize, max_width - 30)
                         for line in condiment_lines:
-                             if current_y < y_margin + line_height_base: p.showPage(); p.setFont("Helvetica", 10.5); current_y = height - y_margin
-                             p.drawString(x_margin + 30, current_y, line.strip())
-                             current_y -= line_height_base * 1.1
+                            if current_y < y_margin + line_height_base:
+                                p.showPage()
+                                p.setFont("Helvetica", 10.5)
+                                current_y = height - y_margin
+                            p.drawString(x_margin + 30, current_y, line.strip())
+                            current_y -= line_height_base * 1.1
                         current_y -= line_height_base * 0.6
 
                     # Presentation (Optional)
@@ -1679,13 +1687,15 @@ def crear_pdf_paciente(evaluation_instance):
                         p.setFont("Helvetica", 10.5)
                         presentation_lines = simpleSplit(recipe['presentation'], p._fontname, p._fontsize, max_width - 30)
                         for line in presentation_lines:
-                             if current_y < y_margin + line_height_base: p.showPage(); p.setFont("Helvetica", 10.5); current_y = height - y_margin
-                             p.drawString(x_margin + 30, current_y, line.strip())
-                             current_y -= line_height_base * 1.5 # More space after the whole recipe
-            else:
-                draw_patient_text_block("No se pudieron parsear las recetas detalladas.")
-                current_y -= line_height_base * 1.5
-
+                            if current_y < y_margin + line_height_base:
+                                p.showPage()
+                                p.setFont("Helvetica", 10.5)
+                                current_y = height - y_margin
+                            p.drawString(x_margin + 30, current_y, line.strip())
+                            current_y -= line_height_base * 1.5  # More space after the whole recipe
+                else:
+                    draw_patient_text_block("No se pudieron parsear las recetas detalladas.")
+                    current_y -= line_height_base * 1.5
         p.save()
         buffer.seek(0)
         app.logger.info(f"PDF para PACIENTE generado para Evaluación ID: {evaluation_instance.id}")
