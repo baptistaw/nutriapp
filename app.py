@@ -2098,22 +2098,25 @@ def crear_pdf_v2(evaluation_instance):
         app.logger.error(f"Error creando PDF (v2) para Evaluación ID {evaluation_instance.id if evaluation_instance else 'N/A'}): {pdf_error}", exc_info=True)
         return io.BytesIO()
 
-def draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_ref, text_content, font_name, font_size, indent=0, line_spacing_factor=1.1, y_margin_page=50, page_height_ref=letter[1], is_list_item=False, bullet="• "):
+def draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_ref, text_content, font_name, font_size, indent=0, line_spacing_factor=1.1, y_margin_page=50, page_height_ref=letter[1], is_list_item=False, bullet="• ", font_color=colors.black):
     """
-    Helper function to draw a block of text with specific styling, handling line wrapping and page breaks.
+    Helper function to draw a block of text with specific styling, handling line
+    wrapping and page breaks. Allows specifying a text color for the whole block.
     Returns the new current_y position.
     """
     p.setFont(font_name, font_size)
+    p.setFillColor(font_color)
     # Asegurarse de que text_content sea un string
     text_content_str = str(text_content) if text_content is not None else ""
 
     lines = simpleSplit(text_content_str, p._fontname, p._fontsize, max_width - indent)
     new_y = current_y
     for i, line_text in enumerate(lines):
-        if new_y < y_margin_page + line_height_ref: # Check if new page is needed
+        if new_y < y_margin_page + line_height_ref:  # Check if new page is needed
             p.showPage()
             new_y = page_height_ref - y_margin_page
-            p.setFont(font_name, font_size) # Re-apply font on new page
+            p.setFont(font_name, font_size)  # Re-apply font on new page
+            p.setFillColor(font_color)
         
         prefix = bullet if is_list_item and i == 0 else "" # Add bullet only to the first line of a list item
         p.drawString(x_margin + indent, new_y, prefix + line_text.strip())
@@ -2178,24 +2181,31 @@ def crear_pdf_paciente(evaluation_instance):
                 is_day_title_patient = day_regex_patient.match(line_patient)
                 is_meal_title_patient = meal_regex_patient.match(line_patient)
                 font_name_patient = "Helvetica"; font_size_patient = 10.5; indent_patient = 0
+                font_color_patient = colors.black
                 space_before_patient = 0; line_spacing_mult_patient = 1.2
                 if is_day_title_patient:
                     font_name_patient = "Helvetica-Bold"; font_size_patient = 12
+                    font_color_patient = colors.HexColor("#003366")
                     if i_patient > 0: space_before_patient = line_height_base * 0.8
                     line_patient = day_regex_patient.sub(r"\1:", line_patient).upper()
                     app.logger.debug(f"PDF_DEBUG (crear_pdf_paciente): Plan - Día: '{line_patient}'")
                 elif is_meal_title_patient:
-                    font_name_patient = "Helvetica-Bold"; font_size_patient = 11; indent_patient = 10
+                    font_name_patient = "Helvetica-Bold"; font_size_patient = 11; indent_patient = 5
+                    font_color_patient = colors.HexColor("#333333")
                     space_before_patient = line_height_base * 0.3
                     line_patient = meal_regex_patient.sub(r"\1:", line_patient)
                     app.logger.debug(f"PDF_DEBUG (crear_pdf_paciente): Plan - Comida: '{line_patient}'")
                 else:
-                    indent_patient = 20; cleaned_line_patient = line_patient.lstrip("*-• ").strip()
+                    indent_patient = 15
+                    cleaned_line_patient = line_patient.lstrip("*-• ").strip()
                     line_patient = f"• {cleaned_line_patient}" if cleaned_line_patient else ""
                     line_spacing_mult_patient = 1.15
-                    # app.logger.debug(f"PDF_DEBUG (crear_pdf_paciente): Plan - Item: '{line_patient}'") # Puede ser muy verboso
                 current_y -= space_before_patient
-                current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, line_patient, font_name_patient, font_size_patient, indent=indent_patient, line_spacing_factor=line_spacing_mult_patient, y_margin_page=y_margin, page_height_ref=height)
+                current_y = draw_text_block_with_style(
+                    p, current_y, x_margin, max_width, line_height_base, line_patient,
+                    font_name_patient, font_size_patient, indent=indent_patient,
+                    line_spacing_factor=line_spacing_mult_patient, y_margin_page=y_margin,
+                    page_height_ref=height, font_color=font_color_patient)
         else:
             current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Plan de comidas no disponible.", "Helvetica-Italic", 10)
         
@@ -2212,38 +2222,78 @@ def crear_pdf_paciente(evaluation_instance):
             draw_patient_section_title("Recetas Detalladas")
 
             for i_recipe_p, recipe in enumerate(parsed_recipes):
-                app.logger.debug(f"PDF_DEBUG (crear_pdf_paciente): Dibujando receta paciente N°{i_recipe_p+1}: {recipe.get('name', 'Sin Nombre')}")
-                if current_y < y_margin + line_height_base * 5: 
+                app.logger.debug(
+                    f"PDF_DEBUG (crear_pdf_paciente): Dibujando receta paciente N°{i_recipe_p+1}: {recipe.get('name', 'Sin Nombre')}"
+                )
+                if current_y < y_margin + line_height_base * 5:
                     p.showPage(); current_y = height - y_margin
                     draw_patient_section_title("Recetas Detalladas (Cont.)")
-                
-                current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, f"{recipe.get('number', 'Receta N/N')}: {recipe.get('name', 'Sin Nombre')}", "Helvetica-Bold", 12, indent=10, line_spacing_factor=1.3)
+
+                current_y = draw_text_block_with_style(
+                    p, current_y, x_margin, max_width, line_height_base,
+                    f"{recipe.get('number', 'Receta N/N')}: {recipe.get('name', 'Sin Nombre')}",
+                    "Helvetica-Bold", 12, indent=8, line_spacing_factor=1.3,
+                    font_color=colors.HexColor('#003366')
+                )
 
                 if recipe.get('servings'):
-                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, f"Rinde: {recipe['servings']}", "Helvetica-Oblique", 10, indent=20, line_spacing_factor=1.2)
+                    current_y = draw_text_block_with_style(
+                        p, current_y, x_margin, max_width, line_height_base,
+                        f"Rinde: {recipe['servings']}", "Helvetica-Oblique", 10,
+                        indent=18, line_spacing_factor=1.2
+                    )
                 if recipe.get('ingredients'):
-                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Ingredientes:", "Helvetica-Bold", 10.5, indent=20, line_spacing_factor=1.2)
+                    current_y = draw_text_block_with_style(
+                        p, current_y, x_margin, max_width, line_height_base,
+                        "Ingredientes:", "Helvetica-Bold", 10.5, indent=18, line_spacing_factor=1.2
+                    )
                     for ing in recipe['ingredients']:
                         ing_text = ing.get('raw_line', 'Ingrediente desconocido').lstrip('* ').strip()
-                        current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, ing_text, "Helvetica", 10.5, indent=30, is_list_item=True, bullet="• ", line_spacing_factor=1.1)
+                        current_y = draw_text_block_with_style(
+                            p, current_y, x_margin, max_width, line_height_base,
+                            ing_text, "Helvetica", 10.5, indent=25, is_list_item=True,
+                            bullet="• ", line_spacing_factor=1.1
+                        )
                     current_y -= line_height_base * 0.3
                 if recipe.get('instructions'):
-                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Preparación:", "Helvetica-Bold", 10.5, indent=20, line_spacing_factor=1.2)
-                    instruction_lines = str(recipe['instructions']).split('\n') # Asegurar que sea string
+                    current_y = draw_text_block_with_style(
+                        p, current_y, x_margin, max_width, line_height_base,
+                        "Preparación:", "Helvetica-Bold", 10.5, indent=18, line_spacing_factor=1.2
+                    )
+                    instruction_lines = str(recipe['instructions']).split('\n')  # Asegurar que sea string
                     for i, instr_line in enumerate(instruction_lines):
                         instr_text = instr_line.strip()
                         is_numbered = re.match(r"^\s*\d+\.\s*", instr_text)
-                        bullet_char = "" if is_numbered else "• " 
-                        text_to_draw = instr_text 
-                        current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, text_to_draw, "Helvetica", 10.5, indent=30, is_list_item=not is_numbered, bullet=bullet_char, line_spacing_factor=1.1)
+                        bullet_char = "" if is_numbered else "• "
+                        text_to_draw = instr_text
+                        current_y = draw_text_block_with_style(
+                            p, current_y, x_margin, max_width, line_height_base,
+                            text_to_draw, "Helvetica", 10.5, indent=25, is_list_item=not is_numbered, bullet=bullet_char, line_spacing_factor=1.1
+                        )
                     current_y -= line_height_base * 0.3
                 if recipe.get('condiments'):
-                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Condimentos Sugeridos:", "Helvetica-Bold", 10.5, indent=20, line_spacing_factor=1.2)
-                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, recipe['condiments'], "Helvetica", 10.5, indent=30, line_spacing_factor=1.1)
+                    current_y = draw_text_block_with_style(
+                        p, current_y, x_margin, max_width, line_height_base,
+                        "Condimentos Sugeridos:", "Helvetica-Bold", 10.5,
+                        indent=18, line_spacing_factor=1.2
+                    )
+                    current_y = draw_text_block_with_style(
+                        p, current_y, x_margin, max_width, line_height_base,
+                        recipe['condiments'], "Helvetica", 10.5, indent=25,
+                        line_spacing_factor=1.1
+                    )
                     current_y -= line_height_base * 0.3
                 if recipe.get('presentation'):
-                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Sugerencia de Presentación/Servicio:", "Helvetica-Bold", 10.5, indent=20, line_spacing_factor=1.2)
-                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, recipe['presentation'], "Helvetica", 10.5, indent=30, line_spacing_factor=1.1)
+                    current_y = draw_text_block_with_style(
+                        p, current_y, x_margin, max_width, line_height_base,
+                        "Sugerencia de Presentación/Servicio:", "Helvetica-Bold", 10.5,
+                        indent=18, line_spacing_factor=1.2
+                    )
+                    current_y = draw_text_block_with_style(
+                        p, current_y, x_margin, max_width, line_height_base,
+                        recipe['presentation'], "Helvetica", 10.5, indent=25,
+                        line_spacing_factor=1.1
+                    )
                 current_y -= line_height_base * 0.8 
         else:
             current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "No se pudieron parsear las recetas detalladas.", "Helvetica-Italic", 10)
