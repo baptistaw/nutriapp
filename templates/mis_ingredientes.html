@@ -37,6 +37,25 @@
                     <input type="text" id="ing_synonyms" name="synonyms" class="form-control form-control-sm" placeholder="Ej: tomate cherry, jitomate">
                     <small class="form-text text-muted">Ayuda a la IA a reconocer el ingrediente.</small>
                 </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-sm-6 col-md-3">
+                        <label for="ing_calories" class="form-label">Calorías por 100g:</label>
+                        <input type="number" step="any" id="ing_calories" name="calories" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <label for="ing_protein" class="form-label">Proteínas (g):</label>
+                        <input type="number" step="any" id="ing_protein" name="protein_g" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <label for="ing_carb" class="form-label">Carbohidratos (g):</label>
+                        <input type="number" step="any" id="ing_carb" name="carb_g" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <label for="ing_fat" class="form-label">Grasas (g):</label>
+                        <input type="number" step="any" id="ing_fat" name="fat_g" class="form-control form-control-sm">
+                    </div>
+                </div>
                 
                 <div class="d-flex justify-content-end">
                     <button type="button" class="btn btn-secondary btn-sm me-2" id="btn-clear-ing-form">Limpiar / Cancelar Edición</button>
@@ -93,6 +112,10 @@
         const ingredientIdInput = document.getElementById('ingredient_id');
         const ingredientNameInput = document.getElementById('ing_name');
         const ingredientSynonymsInput = document.getElementById('ing_synonyms');
+        const ingCaloriesInput = document.getElementById('ing_calories');
+        const ingProteinInput = document.getElementById('ing_protein');
+        const ingCarbInput = document.getElementById('ing_carb');
+        const ingFatInput = document.getElementById('ing_fat');
         const formTitle = document.getElementById('ingredient-form-title');
         const saveButton = document.getElementById('btn-save-ingredient');
         const clearButton = document.getElementById('btn-clear-ing-form');
@@ -187,6 +210,10 @@
             formTitle.innerHTML = '<i class="fas fa-plus-circle"></i> Añadir Nuevo Ingrediente';
             saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Ingrediente';
             tagifySynonyms.removeAllTags(); // Limpiar tags de sinónimos
+            if (ingCaloriesInput) ingCaloriesInput.value = '';
+            if (ingProteinInput) ingProteinInput.value = '';
+            if (ingCarbInput) ingCarbInput.value = '';
+            if (ingFatInput) ingFatInput.value = '';
         }
 
         async function editIngredient(id) {
@@ -218,6 +245,17 @@
                 tagifySynonyms.removeAllTags();
                 if (ing.synonyms && ing.synonyms.length > 0) {
                     tagifySynonyms.addTags(ing.synonyms);
+                }
+                if (ing.nutrients) {
+                    ingCaloriesInput.value = ing.nutrients.calories !== null && ing.nutrients.calories !== undefined ? ing.nutrients.calories : '';
+                    ingProteinInput.value = ing.nutrients.protein_g !== null && ing.nutrients.protein_g !== undefined ? ing.nutrients.protein_g : '';
+                    ingCarbInput.value = ing.nutrients.carb_g !== null && ing.nutrients.carb_g !== undefined ? ing.nutrients.carb_g : '';
+                    ingFatInput.value = ing.nutrients.fat_g !== null && ing.nutrients.fat_g !== undefined ? ing.nutrients.fat_g : '';
+                } else {
+                    ingCaloriesInput.value = '';
+                    ingProteinInput.value = '';
+                    ingCarbInput.value = '';
+                    ingFatInput.value = '';
                 }
 
                 formTitle.innerHTML = '<i class="fas fa-edit"></i> Editar Ingrediente';
