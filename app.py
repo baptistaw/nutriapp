@@ -52,6 +52,31 @@ migrate = Migrate(app, db)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login_page'
+import logging
+import subprocess
+
+class CustomErrorHandler(logging.FileHandler):
+    def emit(self, record):
+        super().emit(record)
+        if record.levelno >= logging.ERROR:
+            try:
+                subprocess.run(["python", "export_last_traceback.py"])
+            except Exception as e:
+                print("Error al ejecutar el script de extracción de traceback:", e)
+
+# Inicializar logging con el handler personalizado
+handler = CustomErrorHandler('error.log')
+handler.setLevel(logging.ERROR)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+
+app.logger.addHandler(handler)
+app.logger.setLevel(logging.ERROR)
+
+@app.errorhandler(Exception)
+def manejar_excepcion(e):
+    app.logger.exception("Excepción capturada:")
+    return "Error interno del servidor", 500
 
 @login_manager.user_loader
 def load_user(user_id):
