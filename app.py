@@ -52,6 +52,10 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login_page'
 
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
 # Explicitly set logger level for debugging
 app.logger.setLevel(logging.DEBUG)
 app.logger.info("Flask logger level set to DEBUG.") # Test log
@@ -2284,71 +2288,9 @@ def index():
     app.logger.info("Acceso a la raíz, redirigiendo al dashboard de pacientes.")
     return redirect(url_for('pacientes_dashboard'))
 
-# Conceptual change in app.py
-@app.route('/evaluacion/formulario', methods=['GET'])
-def formulario_evaluacion():
-    app.logger.debug(f"Accediendo a /evaluacion/formulario con args: {request.args}")
-    current_date_str = datetime.now(timezone.utc).strftime('%d/%m/%Y')
-    current_username = "Nutri_Demo" # Placeholder, replace with actual logged-in user if/when implemented
-    action = request.args.get('action', 'new_evaluation_new_patient') # Default action
-    evaluation_id_to_load_str = request.args.get('load_evaluation_id')
-    # patient_id_for_new_eval = request.args.get('patient_id') # Already handled by JS fetch
-
-    evaluation_data_for_template = None # Initialize to None
-
-    if action == 'edit_evaluation' and evaluation_id_to_load_str:
-        try:
-            evaluation_id_int_for_edit = int(evaluation_id_to_load_str)
-            app.logger.debug(f"Modo 'edit_evaluation', intentando cargar evaluación ID: {evaluation_id_int_for_edit}")
-            # Replace with your actual function to get data for editing
-            # This function is currently commented out below, so this path won't fully work without it.
-            # Asegúrate de que esta función exista y devuelva un dict o None.
-            # evaluation_data_for_template = get_full_evaluation_details_for_template(evaluation_id_int_for_edit)
-            # Por ahora, para evitar NameError si la función no está definida, la comentamos y asignamos None.
-            # Si la implementas, descomenta la línea de arriba y comenta la de abajo.
-            evaluation_data_for_template = None # Temporalmente None hasta que get_full_evaluation_details_for_template esté lista
-            if not evaluation_data_for_template:
-                # flash(f"No se encontró la evaluación ID {evaluation_id_int_for_edit} para editar o la función no está implementada.", "warning")
-                app.logger.warning(f"No se encontró la evaluación ID {evaluation_id_int_for_edit} para editar o get_full_evaluation_details_for_template no devolvió datos.")
-                action = 'new_evaluation_new_patient' # Fallback
-        except ValueError:
-            flash("ID de evaluación inválido para editar.", "danger")
-            action = 'new_evaluation_new_patient' # Fallback
-    # Para cualquier otra acción (incluyendo 'load_eval_for_new', 'new_eval_for_patient', o si 'edit_evaluation' falla),
-    # evaluation_data_for_template será None, y el JavaScript se encargará de cargar los datos si es necesario.
-
-    all_ingredients_for_form = []
-    try:
-        ingredients_db = Ingredient.query.order_by(Ingredient.name).all()
-        all_ingredients_for_form = [{'id': ing.id, 'name': ing.name} for ing in ingredients_db]
-    except Exception as e:
-        app.logger.error(f"Error al obtener la lista de ingredientes para el formulario: {e}")
-
-    return render_template('formulario_evaluacion.html',
-                           current_date_str=current_date_str,
-                           current_username=current_username,
-                           education_levels=app.config.get('EDUCATION_LEVELS', []),
-                           purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []),
-                           activity_factors=app.config.get('ACTIVITY_FACTORS', []), # Use the direct config name
-                           available_pathologies=app.config.get('AVAILABLE_PATHOLOGIES', []),
-                           diet_types=app.config.get('DIET_TYPES', []),
-                           action=action,
-                           evaluation_data_to_load=evaluation_data_for_template, # Ensure it's always passed
-                           all_ingredients=all_ingredients_for_form # Nueva variable para los ingredientes
-                           )
-
-# You'll need a helper function like this if you don't have one for edit_evaluation mode
-# def get_full_evaluation_details_for_template(evaluation_id):
-#     # Fetch evaluation and related patient data
-#     # Convert to a dictionary suitable for the template
-#     # This is ONLY for action == 'edit_evaluation'
-#     # For 'load_eval_for_new', the JS fetches from /get_evaluation_data/
-#     evaluation = Evaluation.query.get(evaluation_id)
-#     if not evaluation:
-#         return None
-#     # ... logic to serialize evaluation and patient data into a dict ...
-#     # This dict should match the structure expected by populatePreloadForm
-#     return serialized_data 
+@app.route('/login')
+def login_page():
+    return render_template('login.html')
 # En app.py, añade esta nueva ruta:
 
 @app.route('/api/preparations', methods=['POST'])
@@ -2455,6 +2397,7 @@ def create_user_preparation():
 
 
 @app.route('/pacientes_dashboard', methods=['GET'])
+@login_required
 def pacientes_dashboard():
     # Esta será la nueva página principal para la gestión de pacientes
     app.logger.info("Accediendo al dashboard de pacientes.")
@@ -3620,9 +3563,10 @@ def api_listar_pacientes(): # Esta es para el autocompletado del nutricionista
     return jsonify({'pacientes': resultado}) # type: ignore
 
 @app.route('/paciente/<int:patient_id>/historial', methods=['GET'])
+@login_required
 def historial_paciente(patient_id):
     app.logger.info(f"Accediendo al historial del paciente ID: {patient_id}")
-    patient = Patient.query.get_or_404(patient_id)
+    patient = Patient.query.filter_by(id=patient_id, user_id=current_user.id).first_or_404()
     # Ordenar evaluaciones por fecha ascendente para los gráficos
     evaluations = patient.evaluations.order_by(Evaluation.consultation_date.asc()).all() 
 
@@ -3675,10 +3619,11 @@ def historial_paciente(patient_id):
                            purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []))
 
 @app.route('/get_all_patients', methods=['GET'])
+@login_required
 def get_all_patients():
-    """Devuelve una lista de todos los pacientes."""
+    """Devuelve una lista de todos los pacientes del usuario actual."""
     try:
-        patients = Patient.query.order_by(Patient.surname, Patient.name).all()
+        patients = Patient.query.filter_by(user_id=current_user.id).order_by(Patient.surname, Patient.name).all()
         patients_data = [{
             "id": p.id, "name": p.name, "surname": p.surname, "cedula": p.cedula
         } for p in patients]
@@ -3949,7 +3894,7 @@ def favorite_generated_preparation():
         return jsonify({'error': f'Error interno al guardar la preparación favorita: {str(e)}'}), 500
 
 @app.route('/mis_preparaciones')
-# @login_required # Asegurar si es necesario
+@login_required
 def mis_preparaciones_view():
     app.logger.info("Accediendo a la página 'Mis Preparaciones'")
     # Preparar los tags para el dropdown, usando el valor normalizado para el 'value' del option
@@ -4255,212 +4200,6 @@ def update_user_profile():
 def mis_ingredientes_view():
     return render_template('mis_ingredientes.html')
 
-@app.route('/api/ingredients', methods=['GET'])
-@firebase_auth_required
-def get_ingredients():
-    ingredients = Ingredient.query.order_by(Ingredient.name).all()
-    app.logger.info(f"API GET /api/ingredients: Devolviendo {len(ingredients)} ingredientes.")
-    return jsonify([ing.to_dict() for ing in ingredients])
-
-@app.route('/api/ingredients/<int:ingredient_id>', methods=['GET'])
-@firebase_auth_required
-def get_ingredient(ingredient_id):
-    try:
-        ingredient = Ingredient.query.get_or_404(ingredient_id)
-        return jsonify(ingredient.to_dict()), 200
-    except Exception as e:
-        app.logger.error(f"API GET /api/ingredients/{ingredient_id}: Error al obtener ingrediente: {e}", exc_info=True)
-        return jsonify({'error': 'Error interno al obtener el ingrediente.'}), 500
-
-@app.route('/api/ingredients', methods=['POST'])
-@firebase_auth_required
-def create_ingredient():
-    data = request.get_json()
-    name = data.get('name', '').strip()
-    synonyms = data.get('synonyms', [])
-
-    try:
-        if not name:
-            raise ValueError("El nombre del ingrediente es requerido.")
-        if Ingredient.query.filter(Ingredient.name.ilike(name)).first():
-            raise ValueError("Ya existe un ingrediente con ese nombre.")
-
-        calories = validate_numeric_field(data.get('calories'), "Calorías", min_val=0)
-        protein_g = validate_numeric_field(data.get('protein_g'), "Proteínas", min_val=0)
-        carb_g = validate_numeric_field(data.get('carb_g'), "Carbohidratos", min_val=0)
-        fat_g = validate_numeric_field(data.get('fat_g'), "Grasas", min_val=0)
-
-    except ValueError as ve:
-        return jsonify({'error': str(ve)}), 400
-
-    new_ingredient = Ingredient(name=name)
-    new_ingredient.set_synonyms(synonyms)
-
-    if any(v is not None for v in [calories, protein_g, carb_g, fat_g]):
-        nutrient_entry = IngredientNutrient(
-            ingredient=new_ingredient, reference_quantity=100.0, reference_unit='g',
-            calories=calories, protein_g=protein_g, carb_g=carb_g, fat_g=fat_g
-        )
-        db.session.add(nutrient_entry)
-
-    try:
-        db.session.add(new_ingredient)
-        db.session.commit()
-        return jsonify(new_ingredient.to_dict()), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': 'Error interno al crear el ingrediente.'}), 500
-
-@app.route('/api/ingredients/<int:ingredient_id>', methods=['PUT'])
-@firebase_auth_required
-def update_ingredient(ingredient_id):
-    ingredient = Ingredient.query.get_or_404(ingredient_id)
-    data = request.get_json()
-    # ... (lógica de actualización completa aquí, similar a la de preparaciones) ...
-    # Por simplicidad, aquí solo actualizamos nombre y sinónimos
-    new_name = data.get('name', '').strip()
-    if new_name and new_name.lower() != ingredient.name.lower() and Ingredient.query.filter(Ingredient.name.ilike(new_name)).first():
-        return jsonify({'error': 'Ya existe otro ingrediente con ese nombre.'}), 409
-    ingredient.name = new_name if new_name else ingredient.name
-    ingredient.set_synonyms(data.get('synonyms', []))
-    db.session.commit()
-    return jsonify(ingredient.to_dict()), 200
-
-@app.route('/api/ingredients/<int:ingredient_id>', methods=['DELETE'])
-@firebase_auth_required
-def delete_ingredient(ingredient_id):
-    ingredient = Ingredient.query.get_or_404(ingredient_id)
-    db.session.delete(ingredient)
-    db.session.commit()
-    return jsonify({'message': 'Ingrediente eliminado correctamente.'}), 200
-
-# --- Bloque de Arranque del Servidor ---
-if __name__ == '__main__':
-    app.run(debug=True)
-
-# --- API para Perfil de Usuario ---
-
-@app.route('/profile')
-@login_required
-def profile_page():
-    return render_template('profile.html', countries=app.config['COUNTRIES'], professions=app.config['PROFESSIONS'])
-
-@app.route('/api/user_info', methods=['GET'])
-@firebase_auth_required
-def get_user_info():
-    user = g.user
-    app.logger.info(f"API /api/user_info: Devolviendo info para usuario ID: {user.id} ({user.email})")
-    return jsonify(user.to_dict())
-
-@app.route('/api/user/profile', methods=['PUT'])
-@firebase_auth_required
-def update_user_profile():
-    user = g.user
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No se recibieron datos.'}), 400
-
-    try:
-        user.name = data.get('name', user.name)
-        user.surname = data.get('surname', user.surname)
-        user.profession = data.get('profession', user.profession)
-        user.license_number = data.get('license_number', user.license_number)
-        user.city = data.get('city', user.city)
-        user.country = data.get('country', user.country)
-        user.address = data.get('address', user.address)
-        user.phone_number = data.get('phone_number', user.phone_number)
-        
-        db.session.commit()
-        app.logger.info(f"Perfil del usuario ID {user.id} actualizado.")
-        return jsonify({'message': 'Perfil actualizado correctamente.'}), 200
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error al actualizar perfil del usuario ID {user.id}: {e}", exc_info=True)
-        return jsonify({'error': 'Error interno al actualizar el perfil.'}), 500
-
-# --- API para Ingredientes ---
-
-@app.route('/api/ingredients', methods=['GET'])
-@firebase_auth_required
-def get_ingredients():
-    ingredients = Ingredient.query.order_by(Ingredient.name).all()
-    app.logger.info(f"API GET /api/ingredients: Devolviendo {len(ingredients)} ingredientes.")
-    return jsonify([ing.to_dict() for ing in ingredients])
-
-@app.route('/api/ingredients/<int:ingredient_id>', methods=['GET'])
-@firebase_auth_required
-def get_ingredient(ingredient_id):
-    try:
-        ingredient = Ingredient.query.get_or_404(ingredient_id)
-        return jsonify(ingredient.to_dict()), 200
-    except Exception as e:
-        app.logger.error(f"API GET /api/ingredients/{ingredient_id}: Error al obtener ingrediente: {e}", exc_info=True)
-        return jsonify({'error': 'Error interno al obtener el ingrediente.'}), 500
-
-@app.route('/api/ingredients', methods=['POST'])
-@firebase_auth_required
-def create_ingredient():
-    data = request.get_json()
-    name = data.get('name', '').strip()
-    synonyms = data.get('synonyms', [])
-
-    try:
-        if not name:
-            raise ValueError("El nombre del ingrediente es requerido.")
-        if Ingredient.query.filter(Ingredient.name.ilike(name)).first():
-            raise ValueError("Ya existe un ingrediente con ese nombre.")
-
-        calories = validate_numeric_field(data.get('calories'), "Calorías", min_val=0)
-        protein_g = validate_numeric_field(data.get('protein_g'), "Proteínas", min_val=0)
-        carb_g = validate_numeric_field(data.get('carb_g'), "Carbohidratos", min_val=0)
-        fat_g = validate_numeric_field(data.get('fat_g'), "Grasas", min_val=0)
-
-    except ValueError as ve:
-        return jsonify({'error': str(ve)}), 400
-
-    new_ingredient = Ingredient(name=name)
-    new_ingredient.set_synonyms(synonyms)
-
-    if any(v is not None for v in [calories, protein_g, carb_g, fat_g]):
-        nutrient_entry = IngredientNutrient(
-            ingredient=new_ingredient, reference_quantity=100.0, reference_unit='g',
-            calories=calories, protein_g=protein_g, carb_g=carb_g, fat_g=fat_g
-        )
-        db.session.add(nutrient_entry)
-
-    try:
-        db.session.add(new_ingredient)
-        db.session.commit()
-        return jsonify(new_ingredient.to_dict()), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': 'Error interno al crear el ingrediente.'}), 500
-
-@app.route('/api/ingredients/<int:ingredient_id>', methods=['PUT'])
-@firebase_auth_required
-def update_ingredient(ingredient_id):
-    ingredient = Ingredient.query.get_or_404(ingredient_id)
-    data = request.get_json()
-    # ... (lógica de actualización completa aquí, similar a la de preparaciones) ...
-    # Por simplicidad, aquí solo actualizamos nombre y sinónimos
-    new_name = data.get('name', '').strip()
-    if new_name and new_name.lower() != ingredient.name.lower() and Ingredient.query.filter(Ingredient.name.ilike(new_name)).first():
-        return jsonify({'error': 'Ya existe otro ingrediente con ese nombre.'}), 409
-    ingredient.name = new_name if new_name else ingredient.name
-    ingredient.set_synonyms(data.get('synonyms', []))
-    db.session.commit()
-    return jsonify(ingredient.to_dict()), 200
-
-@app.route('/api/ingredients/<int:ingredient_id>', methods=['DELETE'])
-@firebase_auth_required
-def delete_ingredient(ingredient_id):
-    ingredient = Ingredient.query.get_or_404(ingredient_id)
-    db.session.delete(ingredient)
-    db.session.commit()
-    return jsonify({'message': 'Ingrediente eliminado correctamente.'}), 200
-
-# Pega este código al final de tu archivo app.py
-
 @app.route('/logout')
 @login_required
 def logout():
@@ -4468,107 +4207,85 @@ def logout():
     flash('Has cerrado sesión exitosamente.', 'success')
     return redirect(url_for('login_page'))
 
-@app.route('/pacientes_dashboard')
-@login_required
-def pacientes_dashboard():
-    return render_template('pacientes_dashboard.html')
-
-@app.route('/paciente/<int:patient_id>/historial')
-@login_required
-def historial_paciente(patient_id):
-    patient = Patient.query.filter_by(id=patient_id, user_id=current_user.id).first_or_404()
-    evaluations = patient.evaluations.order_by(Evaluation.consultation_date.asc()).all()
-    
-    chart_data = {'labels': [], 'weight': [], 'imc': [], 'whr': [], 'whtr': [], 'references': {}}
-    if len(evaluations) > 1:
-        for ev in evaluations:
-            chart_data['labels'].append(ev.consultation_date.strftime('%d-%m-%Y'))
-            chart_data['weight'].append(ev.weight_at_eval)
-            if ev.weight_at_eval and patient.height_cm:
-                imc = ev.weight_at_eval / ((patient.height_cm / 100) ** 2)
-                chart_data['imc'].append(round(imc, 2))
-            else:
-                chart_data['imc'].append(None)
-            if ev.waist_circumference_cm and ev.hip_circumference_cm:
-                whr = ev.waist_circumference_cm / ev.hip_circumference_cm
-                chart_data['whr'].append(round(whr, 2))
-            else:
-                chart_data['whr'].append(None)
-            if ev.waist_circumference_cm and patient.height_cm:
-                whtr = ev.waist_circumference_cm / patient.height_cm
-                chart_data['whtr'].append(round(whtr, 2))
-            else:
-                chart_data['whtr'].append(None)
-
-    return render_template('historial_paciente.html', patient=patient, evaluations=evaluations, chart_data=chart_data)
-
-@app.route('/formulario_evaluacion', methods=['GET'])
-@login_required
-def formulario_evaluacion():
-    all_ingredients = Ingredient.query.order_by(Ingredient.name).all()
-    ingredients_for_js = [{'id': ing.id, 'name': ing.name} for ing in all_ingredients]
-    
-    return render_template('formulario_evaluacion.html', 
-                           all_ingredients=ingredients_for_js,
-                           current_date_str=datetime.now().strftime('%d/%m/%Y'),
-                           current_username=current_user.name or current_user.email,
-                           education_levels=app.config.get('EDUCATION_LEVELS', []), 
-                           purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []), 
-                           activity_factors=app.config.get('ACTIVITY_FACTORS', []),
-                           available_pathologies=app.config.get('AVAILABLE_PATHOLOGIES', []), 
-                           diet_types=app.config.get('DIET_TYPES', []))
-
-@app.route('/mis_ingredientes')
-@login_required
-def mis_ingredientes_view():
-    return render_template('mis_ingredientes.html')
-
-@app.route('/mis_preparaciones')
-@login_required
-def mis_preparaciones_view():
-    available_suitability_tags = [{'value': dt[0].lower().strip().replace(" ", "_"), 'display': dt[1]} for dt in app.config.get('DIET_TYPES', []) if dt[0].lower() != 'otra']
-    return render_template('mis_preparaciones.html', available_suitability_tags=available_suitability_tags)
-
-# --- API Routes (Protected) ---
-
-@app.route('/api/user_info', methods=['GET'])
+@app.route('/api/ingredients', methods=['GET'])
 @firebase_auth_required
-def get_user_info():
-    user = g.user
-    return jsonify(user.to_dict())
+def get_ingredients():
+    ingredients = Ingredient.query.order_by(Ingredient.name).all()
+    app.logger.info(f"API GET /api/ingredients: Devolviendo {len(ingredients)} ingredientes.")
+    return jsonify([ing.to_dict() for ing in ingredients])
 
-@app.route('/api/user/profile', methods=['PUT'])
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['GET'])
 @firebase_auth_required
-def update_user_profile():
-    user = g.user
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No se recibieron datos.'}), 400
+def get_ingredient(ingredient_id):
     try:
-        user.name = data.get('name', user.name)
-        user.surname = data.get('surname', user.surname)
-        user.profession = data.get('profession', user.profession)
-        user.license_number = data.get('license_number', user.license_number)
-        user.city = data.get('city', user.city)
-        user.country = data.get('country', user.country)
-        user.address = data.get('address', user.address)
-        user.phone_number = data.get('phone_number', user.phone_number)
+        ingredient = Ingredient.query.get_or_404(ingredient_id)
+        return jsonify(ingredient.to_dict()), 200
+    except Exception as e:
+        app.logger.error(f"API GET /api/ingredients/{ingredient_id}: Error al obtener ingrediente: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno al obtener el ingrediente.'}), 500
+
+@app.route('/api/ingredients', methods=['POST'])
+@firebase_auth_required
+def create_ingredient():
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    synonyms = data.get('synonyms', [])
+
+    try:
+        if not name:
+            raise ValueError("El nombre del ingrediente es requerido.")
+        if Ingredient.query.filter(Ingredient.name.ilike(name)).first():
+            raise ValueError("Ya existe un ingrediente con ese nombre.")
+
+        calories = validate_numeric_field(data.get('calories'), "Calorías", min_val=0)
+        protein_g = validate_numeric_field(data.get('protein_g'), "Proteínas", min_val=0)
+        carb_g = validate_numeric_field(data.get('carb_g'), "Carbohidratos", min_val=0)
+        fat_g = validate_numeric_field(data.get('fat_g'), "Grasas", min_val=0)
+
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+
+    new_ingredient = Ingredient(name=name)
+    new_ingredient.set_synonyms(synonyms)
+
+    if any(v is not None for v in [calories, protein_g, carb_g, fat_g]):
+        nutrient_entry = IngredientNutrient(
+            ingredient=new_ingredient, reference_quantity=100.0, reference_unit='g',
+            calories=calories, protein_g=protein_g, carb_g=carb_g, fat_g=fat_g
+        )
+        db.session.add(nutrient_entry)
+
+    try:
+        db.session.add(new_ingredient)
         db.session.commit()
-        return jsonify({'message': 'Perfil actualizado correctamente.'}), 200
+        return jsonify(new_ingredient.to_dict()), 201
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error al actualizar perfil del usuario ID {user.id}: {e}", exc_info=True)
-        return jsonify({'error': 'Error interno al actualizar el perfil.'}), 500
+        return jsonify({'error': 'Error interno al crear el ingrediente.'}), 500
 
-@app.route('/get_all_patients', methods=['GET'])
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['PUT'])
 @firebase_auth_required
-def get_all_patients():
-    patients = Patient.query.filter_by(user_id=g.user.id).order_by(Patient.surname, Patient.name).all()
-    patients_data = [{"id": p.id, "name": p.name, "surname": p.surname, "cedula": p.cedula} for p in patients]
-    return jsonify({"results": patients_data})
+def update_ingredient(ingredient_id):
+    ingredient = Ingredient.query.get_or_404(ingredient_id)
+    data = request.get_json()
+    # ... (lógica de actualización completa aquí, similar a la de preparaciones) ...
+    # Por simplicidad, aquí solo actualizamos nombre y sinónimos
+    new_name = data.get('name', '').strip()
+    if new_name and new_name.lower() != ingredient.name.lower() and Ingredient.query.filter(Ingredient.name.ilike(new_name)).first():
+        return jsonify({'error': 'Ya existe otro ingrediente con ese nombre.'}), 409
+    ingredient.name = new_name if new_name else ingredient.name
+    ingredient.set_synonyms(data.get('synonyms', []))
+    db.session.commit()
+    return jsonify(ingredient.to_dict()), 200
 
-# ... (Aquí irían el resto de tus rutas API, como las de ingredientes, preparaciones, etc.)
-# ... (Asegúrate de que todas estén protegidas con @firebase_auth_required y filtren por g.user.id)
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['DELETE'])
+@firebase_auth_required
+def delete_ingredient(ingredient_id):
+    ingredient = Ingredient.query.get_or_404(ingredient_id)
+    db.session.delete(ingredient)
+    db.session.commit()
+    return jsonify({'message': 'Ingrediente eliminado correctamente.'}), 200
+
 
 # --- Bloque de Arranque del Servidor ---
 if __name__ == '__main__':
