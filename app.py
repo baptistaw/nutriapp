@@ -2288,6 +2288,27 @@ def index():
     app.logger.info("Acceso a la raíz, redirigiendo al dashboard de pacientes.")
     return redirect(url_for('pacientes_dashboard'))
 
+@app.route('/formulario_evaluacion', methods=['GET'])
+@login_required
+def formulario_evaluacion():
+    """Renderiza la página principal para crear una nueva evaluación."""
+    all_ingredients = Ingredient.query.order_by(Ingredient.name).all()
+    ingredients_for_js = [{'id': ing.id, 'name': ing.name} for ing in all_ingredients]
+
+    return render_template(
+        'formulario_evaluacion.html',
+        all_ingredients=ingredients_for_js,
+        current_date_str=datetime.now(timezone.utc).strftime('%d/%m/%Y'),
+        current_username=current_user.name or current_user.email,
+        education_levels=app.config.get('EDUCATION_LEVELS', []),
+        purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []),
+        activity_factors=app.config.get('ACTIVITY_FACTORS', []),
+        available_pathologies=app.config.get('AVAILABLE_PATHOLOGIES', []),
+        diet_types=app.config.get('DIET_TYPES', []),
+        action=None,
+        evaluation_data_to_load=None
+    )
+
 @app.route('/login')
 def login_page():
     return render_template('login.html')
