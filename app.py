@@ -2325,7 +2325,61 @@ def index():
 @app.route('/formulario_evaluacion', methods=['GET'])
 @login_required
 def formulario_evaluacion():
-    """Renderiza la página principal para crear una nueva evaluación."""
+    """Renderiza la página para crear una evaluación o cargar una previa."""
+    action = request.args.get('action', 'new_evaluation_new_patient')
+    eval_id_str = request.args.get('load_evaluation_id')
+    evaluation_data = None
+
+    if action in ('edit_evaluation', 'load_eval_for_new') and eval_id_str:
+        try:
+            eval_id = int(eval_id_str)
+            evaluation = Evaluation.query.get(eval_id)
+            if evaluation and evaluation.patient:
+                patient = evaluation.patient
+                evaluation_data = {
+                    'patient_id': patient.id,
+                    'name': patient.name,
+                    'surname': patient.surname,
+                    'cedula': patient.cedula,
+                    'email': patient.email,
+                    'phone_number': patient.phone_number,
+                    'education_level': patient.education_level,
+                    'purchasing_power': patient.purchasing_power,
+                    'dob': patient.dob.strftime('%Y-%m-%d') if patient.dob else None,
+                    'sex': patient.sex,
+                    'height_cm': patient.height_cm,
+                    'allergies': patient.get_allergies(),
+                    'intolerances': patient.get_intolerances(),
+                    'preferences': patient.get_preferences(),
+                    'aversions': patient.get_aversions(),
+
+                    'evaluation_id': evaluation.id,
+                    'consultation_date': evaluation.consultation_date.isoformat(),
+                    'weight_at_eval': evaluation.weight_at_eval,
+                    'wrist_circumference_cm': evaluation.wrist_circumference_cm,
+                    'waist_circumference_cm': evaluation.waist_circumference_cm,
+                    'hip_circumference_cm': evaluation.hip_circumference_cm,
+                    'gestational_age_weeks': evaluation.gestational_age_weeks,
+                    'activity_factor': evaluation.activity_factor,
+                    'pathologies': evaluation.get_pathologies(),
+                    'other_pathologies_text': evaluation.other_pathologies_text,
+                    'postoperative_text': evaluation.postoperative_text,
+                    'diet_type': evaluation.diet_type,
+                    'other_diet_type_text': evaluation.other_diet_type_text,
+                    'target_weight': evaluation.target_weight,
+                    'target_waist_cm': evaluation.target_waist_cm,
+                    'target_protein_perc': evaluation.target_protein_perc,
+                    'target_carb_perc': evaluation.target_carb_perc,
+                    'target_fat_perc': evaluation.target_fat_perc,
+                    'edited_plan_text': evaluation.edited_plan_text,
+                    'user_observations': evaluation.user_observations,
+                    'micronutrients': evaluation.get_micronutrients(),
+                    'base_foods': evaluation.get_base_foods(),
+                    'references': evaluation.references,
+                }
+        except ValueError:
+            app.logger.warning('ID de evaluación inválido para cargar datos')
+
     all_ingredients = Ingredient.query.order_by(Ingredient.name).all()
     ingredients_for_js = [{'id': ing.id, 'name': ing.name} for ing in all_ingredients]
 
@@ -2339,8 +2393,8 @@ def formulario_evaluacion():
         activity_factors=app.config.get('ACTIVITY_FACTORS', []),
         available_pathologies=app.config.get('AVAILABLE_PATHOLOGIES', []),
         diet_types=app.config.get('DIET_TYPES', []),
-        action=None,
-        evaluation_data_to_load=None
+        action=action,
+        evaluation_data_to_load=evaluation_data
     )
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -3906,16 +3960,20 @@ def editar_evaluacion_form(evaluation_id): # Renamed to avoid conflict, will onl
         'references': evaluation.references # Usar el property
     }
 
+    all_ingredients = Ingredient.query.order_by(Ingredient.name).all()
+    ingredients_for_js = [{'id': ing.id, 'name': ing.name} for ing in all_ingredients]
+
     return render_template('formulario_evaluacion.html',
-                           action='edit_evaluation', # Indicar la acción correcta
-                           evaluation_data_to_load=evaluation_data_for_form, # Pasar los datos directamente
+                           action='edit_evaluation',
+                           evaluation_data_to_load=evaluation_data_for_form,
                            activity_factors=app.config['ACTIVITY_FACTORS'],
                            available_pathologies=app.config['AVAILABLE_PATHOLOGIES'],
                            education_levels=app.config['EDUCATION_LEVELS'],
                            purchasing_power_levels=app.config['PURCHASING_POWER_LEVELS'],
                            diet_types=app.config['DIET_TYPES'],
-                           current_username="Nutri_Demo", # O el usuario logueado
-                           current_date_str=evaluation.consultation_date.strftime('%d/%m/%Y') # Usar fecha de la evaluación
+                           all_ingredients=ingredients_for_js,
+                           current_username=current_user.name or current_user.email,
+                           current_date_str=evaluation.consultation_date.strftime('%d/%m/%Y')
                            )
 
 
