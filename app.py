@@ -82,6 +82,33 @@ if not DRIVE_FOLDER_ID:
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 SERVICE_ACCOUNT_FILE = 'credentials.json'
 
+# --- Decorador de Autenticación Firebase ---
+def firebase_auth_required(view_func):
+    """Verifica el token Firebase enviado en el encabezado Authorization."""
+
+    @wraps(view_func)
+    def wrapped_view(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Token de autenticación faltante"}), 401
+
+        id_token = auth_header.split(" ", 1)[1]
+        try:
+            decoded = auth.verify_id_token(id_token)
+        except Exception as e:  # pragma: no cover - logging
+            app.logger.error(f"Error verificando token Firebase: {e}")
+            return jsonify({"error": "Token inválido"}), 401
+
+        firebase_uid = decoded.get("uid")
+        user = User.query.filter_by(firebase_uid=firebase_uid).first()
+        if not user:
+            return jsonify({"error": "Usuario no registrado"}), 401
+
+        g.user = user
+        return view_func(*args, **kwargs)
+
+    return wrapped_view
+
 # --- Procesador de Contexto ---
 @app.context_processor
 def inject_now():
