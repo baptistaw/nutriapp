@@ -135,7 +135,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     patients = db.relationship('Patient', backref='nutritionist', lazy=True)
-    preparations = db.relationship('UserPreparation', backref='user', lazy=True)
+    preparations = db.relationship('UserPreparation', back_populates='user', lazy=True)
 
     def to_dict(self):
         return {
@@ -438,7 +438,7 @@ class UserPreparation(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    user = db.relationship('User', backref=db.backref('user_preparations', lazy=True))
+    user = db.relationship('User', back_populates='preparations')
 
     def set_ingredients(self, ingredients_list):
         self.ingredients_json = json.dumps(ingredients_list)
