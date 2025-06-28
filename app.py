@@ -22,6 +22,7 @@ from flask_wtf.csrf import CSRFProtect
 from firebase_admin import credentials, auth
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from urllib.parse import urlparse, urljoin
 
 # Google / Gemini Imports
 import google.generativeai as genai
@@ -55,6 +56,14 @@ login_manager.login_view = 'login_page'
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+def is_safe_url(target: str) -> bool:
+    """Return True if the URL is safe to redirect to."""
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return (
+        test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc
+    )
 
 # Explicitly set logger level for debugging
 app.logger.setLevel(logging.DEBUG)
@@ -2309,8 +2318,48 @@ def formulario_evaluacion():
         evaluation_data_to_load=None
     )
 
-@app.route('/login')
+@app.route('/login', methods=['GET', 'POST'])
 def login_page():
+    if request.method == 'POST':
+        id_token = request.form.get('idToken')
+        if not id_token:
+            flash('Token de autenticación faltante.', 'danger')
+            return redirect(url_for('login_page'))
+        try:
+            decoded = auth.verify_id_token(id_token)
+        except Exception as e:  # pragma: no cover - logging
+            app.logger.error(f'Error verificando token Firebase: {e}')
+            flash('Token de autenticación inválido.', 'danger')
+            return redirect(url_for('login_page'))
+
+        firebase_uid = decoded.get('uid')
+        email = decoded.get('email')
+        full_name = decoded.get('name', '')
+
+        user = User.query.filter_by(firebase_uid=firebase_uid).first()
+        if not user:
+            user = User.query.filter_by(email=email).first()
+            if user:
+                user.firebase_uid = firebase_uid
+            else:
+                name = ''
+                surname = ''
+                if full_name:
+                    parts = full_name.split(' ', 1)
+                    name = parts[0]
+                    if len(parts) > 1:
+                        surname = parts[1]
+                user = User(firebase_uid=firebase_uid, email=email, name=name, surname=surname)
+                db.session.add(user)
+            db.session.commit()
+
+        login_user(user)
+
+        next_url = request.args.get('next')
+        if next_url and is_safe_url(next_url):
+            return redirect(next_url)
+        return redirect(url_for('pacientes_dashboard'))
+
     return render_template('login.html')
 
 # Route for registration page
