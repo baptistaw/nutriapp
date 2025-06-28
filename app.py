@@ -1760,7 +1760,7 @@ def parse_all_recipes_from_text_block(recetario_text):
 
     # Dividir el texto en bloques de recetas individuales.
     # El lookahead positivo (?=...) asegura que el delimitador "Receta N°X:" se mantenga al inicio de cada bloque subsiguiente.
-    recipe_blocks_raw = re.split(r"\n(?=Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*)", clean_recetario_text, flags=re.IGNORECASE)
+    recipe_blocks_raw = re.split(r"\n(?=\s*\**\s*Receta\s*(?:N°|No\.|N\.)?\s*\d+:)", clean_recetario_text, flags=re.IGNORECASE)
     app.logger.debug(f"Bloques crudos después del split inicial: {len(recipe_blocks_raw)}")
 
     for i, block_text_raw in enumerate(recipe_blocks_raw):
@@ -4438,13 +4438,36 @@ def create_ingredient():
 def update_ingredient(ingredient_id):
     ingredient = Ingredient.query.get_or_404(ingredient_id)
     data = request.get_json()
-    # ... (lógica de actualización completa aquí, similar a la de preparaciones) ...
-    # Por simplicidad, aquí solo actualizamos nombre y sinónimos
     new_name = data.get('name', '').strip()
     if new_name and new_name.lower() != ingredient.name.lower() and Ingredient.query.filter(Ingredient.name.ilike(new_name)).first():
         return jsonify({'error': 'Ya existe otro ingrediente con ese nombre.'}), 409
+
     ingredient.name = new_name if new_name else ingredient.name
     ingredient.set_synonyms(data.get('synonyms', []))
+
+    try:
+        calories = validate_numeric_field(data.get('calories'), "Calorías", min_val=0)
+        protein_g = validate_numeric_field(data.get('protein_g'), "Proteínas", min_val=0)
+        carb_g = validate_numeric_field(data.get('carb_g'), "Carbohidratos", min_val=0)
+        fat_g = validate_numeric_field(data.get('fat_g'), "Grasas", min_val=0)
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+
+    nutrient_entry = ingredient.nutrients.filter_by(reference_quantity=100.0, reference_unit='g').first()
+    if not nutrient_entry and any(v is not None for v in [calories, protein_g, carb_g, fat_g]):
+        nutrient_entry = IngredientNutrient(ingredient=ingredient, reference_quantity=100.0, reference_unit='g')
+        db.session.add(nutrient_entry)
+
+    if nutrient_entry:
+        if calories is not None:
+            nutrient_entry.calories = calories
+        if protein_g is not None:
+            nutrient_entry.protein_g = protein_g
+        if carb_g is not None:
+            nutrient_entry.carb_g = carb_g
+        if fat_g is not None:
+            nutrient_entry.fat_g = fat_g
+
     db.session.commit()
     return jsonify(ingredient.to_dict()), 200
 

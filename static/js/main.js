@@ -170,6 +170,40 @@ function hideFinalMessage() {
   if (finalMessageDiv) finalMessageDiv.style.display = "none";
 }
 
+async function sendPlanByEmail(evaluationId) {
+  const emailBtn = document.getElementById('sendEmailToPatientButton');
+  const originalHtml = emailBtn ? emailBtn.innerHTML : '';
+  if (emailBtn) {
+    emailBtn.disabled = true;
+    emailBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enviando...';
+  }
+  hideFinalMessage();
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error('No autenticado. Por favor, inicie sesión.');
+    const token = await user.getIdToken();
+
+    const resp = await fetch(`/enviar_plan_por_email/${evaluationId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-CSRFToken': getCsrfToken()
+      }
+    });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || `Error del servidor: ${resp.status}`);
+    showFinalMessage(result.message || 'Email enviado correctamente.', 'success');
+  } catch (err) {
+    console.error('Error en sendPlanByEmail:', err);
+    showFinalMessage(`Error al enviar email: ${err.message}`, 'danger');
+  } finally {
+    if (emailBtn) {
+      emailBtn.disabled = false;
+      emailBtn.innerHTML = originalHtml || '<i class="fas fa-envelope"></i> Enviar Plan';
+    }
+  }
+}
+
 function getCsrfToken() {
   const csrfTokenElement = document.querySelector('meta[name="csrf-token"]');
   if (csrfTokenElement) {
@@ -805,7 +839,7 @@ async function generarPlan() {
 
         if (recipesDetailedText) {
             const recipeMatches = [];
-            const recipeStartPattern = /\n?(Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*[\s\S]+?)(?=\nReceta\s*(?:N°|No\.|N\.)?\s*\d+:|$)/gi;
+            const recipeStartPattern = /\n?\s*\**\s*(Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*[\s\S]+?)(?=\n\s*\**\s*Receta\s*(?:N°|No\.|N\.)?\s*\d+:|$)/gi;
             let match;
 
             while ((match = recipeStartPattern.exec(recipesDetailedText)) !== null) {
