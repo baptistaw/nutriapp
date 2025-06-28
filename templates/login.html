@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Iniciar Sesión - NutriApp{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h3 class="card-title text-center mb-4">Iniciar Sesión</h3>
+                    
+                    <!-- Formulario de Login -->
+                    <form id="login-form">
+                        <div class="mb-3">
+                            <label for="login-email" class="form-label">Correo Electrónico</label>
+                            <input type="email" class="form-control" id="login-email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="login-password" class="form-label">Contraseña</label>
+                            <input type="password" class="form-control" id="login-password" required>
+                        </div>
+                        
+                        <!-- Contenedor para mensajes de error -->
+                        <div id="login-error-message" class="alert alert-danger d-none" role="alert">
+                            <!-- El mensaje de error se insertará aquí -->
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                <span id="login-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                                Iniciar Sesión
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="text-center mt-3">
+                        <small class="text-muted">¿No tienes una cuenta? Contacta al administrador.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# El script principal main.js ya se carga en base.html y contiene la lógica de login #}
+{% endblock %}

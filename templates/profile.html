@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block title %}Mi Perfil - NutriApp{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="card shadow-lg border-0 rounded-lg mt-5">
+        <div class="card-header bg-primary text-center">
+          <h3 class="text-white my-2"><i class="fas fa-user-circle"></i> Mi Perfil</h3>
+        </div>
+        <div class="card-body p-4">
+          <form id="profile-form">
+            <div class="mb-3">
+              <label for="profile-email" class="form-label">Email (No editable):</label>
+              <input type="email" id="profile-email" class="form-control" disabled>
+            </div>
+             <div class="row mb-3">
+              <div class="col-md-6">
+              <label for="profile-name" class="form-label">Nombre:</label>
+              <input type="text" id="profile-name" class="form-control" required>
+            </div>
+              <div class="col-md-6">
+                <label for="profile-surname" class="form-label">Apellido:</label>
+                <input type="text" id="profile-surname" class="form-control">
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label for="profile-profession" class="form-label">Profesión:</label>
+                <select id="profile-profession" class="form-select">
+                  <option value="">Seleccionar...</option>
+                  {% for profession_val, profession_desc in professions %}
+                    <option value="{{ profession_val }}">{{ profession_desc }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label for="profile-license-number" class="form-label">Número de Matrícula:</label>
+                <input type="text" id="profile-license-number" class="form-control">
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label for="profile-city" class="form-label">Ciudad:</label>
+                <input type="text" id="profile-city" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label for="profile-country" class="form-label">País<span class="text-danger">*</span>:</label>
+                <select id="profile-country" name="country" class="form-select" required>
+                  <option value="">Seleccionar...</option>
+                  {% for country_name, phone_code in countries %}
+                    <option value="{{ country_name }}" data-phone-code="{{ phone_code }}">{{ country_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="profile-address" class="form-label">Dirección (Calle y Número):</label>
+              <input type="text" id="profile-address" class="form-control">
+            </div>
+            <div class="mb-3">
+              <label for="profile-phone-number" class="form-label">Teléfono:</label>
+              <div class="input-group">
+                <select id="profile-phone-code" name="phone_code" class="form-select flex-grow-0" style="width: auto;">
+                  <option value="">Código...</option>
+                  {% for country_name, phone_code in countries %}
+                    <option value="{{ phone_code }}">{{ phone_code }}</option>
+                  {% endfor %}
+                </select>
+                <input type="tel" id="profile-local-phone-number" name="local_phone_number" class="form-control" placeholder="Número local">
+              </div>
+            </div>
+            
+            <div class="d-flex align-items-center justify-content-end mt-4 mb-0">
+              <button type="submit" class="btn btn-primary">
+                <span id="profile-spinner" class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" style="display: none;"></span>
+                Guardar Cambios
+              </button>
+            </div>
+            <div id="profile-message" class="alert mt-3" style="display: none;"></div>
+          </form>
+        </div>
+        <div class="card-footer text-center py-3">
+          <div class="small">
+            &copy; {{ now.year }} NutriApp
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+{% endblock %}

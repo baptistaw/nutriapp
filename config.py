@@ -22,8 +22,28 @@ class Config:
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
     MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER') or os.environ.get('MAIL_USERNAME')
+    MAIL_SERVER = os.environ.get('MAIL_SERVER')
+    MAIL_PORT = int(os.environ.get('MAIL_PORT') or 587)
+    MAIL_USE_TLS = os.environ.get('MAIL_USE_TLS', 'True').lower() in ['true', 'on', '1']
+    MAIL_USE_SSL = os.environ.get('MAIL_USE_SSL', 'False').lower() in ['true', 'on', '1']
+    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER') or os.environ.get('MAIL_USERNAME')
+
+    # Firebase Configuration (placeholders, set in .env or environment)
+    FIREBASE_API_KEY = os.environ.get('FIREBASE_API_KEY')
+    FIREBASE_AUTH_DOMAIN = os.environ.get('FIREBASE_AUTH_DOMAIN')
+    FIREBASE_PROJECT_ID = os.environ.get('FIREBASE_PROJECT_ID')
 
     # Constantes de la aplicación para formularios y lógica
+    PROFESSIONS = [
+    ('nutricionista', 'Nutricionista'),
+    ('dietista', 'Dietista'),
+    ('medico', 'Médico'),
+    ('entrenador_personal', 'Entrenador Personal'),
+    ('otro', 'Otro (especificar)')
+    ]
+
     ACTIVITY_FACTORS = [
         (1.2, "Sedentario (poco o ningún ejercicio)"),
         (1.375, "Actividad Ligera (ejercicio 1-3 días/semana)"),
@@ -62,8 +82,24 @@ class Config:
         ('Vegana', 'Vegana'),
         ('Otra', 'Otra (especificar)')
     ]
-SEX_OPTIONS = [
+
+    # New: Countries and their phone codes for dropdowns
+    COUNTRIES = [
+        ("Argentina", "+54"),
+        ("Brazil", "+55"),
+        ("Canada", "+1"),
+        ("Chile", "+56"),
+        ("Colombia", "+57"),
+        ("Mexico", "+52"),
+        ("Spain", "+34"),
+        ("United States", "+1"),
+        ("Uruguay", "+598"),
+        ("Venezuela", "+58"),
+        # Add more countries as needed
+    ]
+    
+    SEX_OPTIONS = [
     ('masculino', 'Masculino'),
     ('femenino', 'Femenino'),
     ('otro', 'Otro')
-]
+    ]

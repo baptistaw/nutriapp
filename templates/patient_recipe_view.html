@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Receta: {{ recipe.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ recipe.name }}</h2>
+    <p><small>Receta del plan del {{ evaluation.consultation_date.strftime('%d/%m/%Y') }} ({{ recipe.number }})</small></p>
+    <hr>
+
+    {% if recipe %}
+        {% if recipe.servings %}
+            <p><strong>Rinde:</strong> {{ recipe.servings }}</p>
+        {% endif %}
+
+        <h4>Ingredientes</h4>
+        {% if recipe.ingredients %}
+            <ul class="list-group list-group-flush mb-3">
+                {% for ingredient in recipe.ingredients %}
+                    {# ingredient.original_line ya tiene el formato de la IA, solo quitamos el marcador si existe #}
+                    <li class="list-group-item">{{ ingredient.original_line | replace("* ", "") | replace("• ", "") | trim }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No hay ingredientes listados para esta receta.</p>
+        {% endif %}
+
+        <h4>Preparación</h4>
+        {% if recipe.instructions %}
+            <div style="white-space: pre-wrap; word-wrap: break-word; padding: 10px; border: 1px solid #eee; border-radius: 4px; background-color: #f9f9f9;">
+                {{ recipe.instructions }}
+            </div>
+        {% else %}
+            <p>No hay instrucciones de preparación.</p>
+        {% endif %}
+
+        {% if recipe.condiments %}
+            <h4 class="mt-3">Condimentos Sugeridos</h4>
+            <p>{{ recipe.condiments }}</p>
+        {% endif %}
+
+        {% if recipe.presentation %}
+            <h4 class="mt-3">Sugerencia de Presentación/Servicio</h4>
+            <p>{{ recipe.presentation }}</p>
+        {% endif %}
+
+    {% else %}
+        <p>Receta no encontrada.</p>
+    {% endif %}
+
+    <hr class="my-4">
+    <a href="{{ url_for('patient_plan', patient_id=patient.id, evaluation_id=evaluation.id) }}" class="btn btn-secondary">Volver al Plan</a>
+    <a href="{{ url_for('patient_dashboard', patient_id=patient.id) }}" class="btn btn-secondary">Volver al Dashboard</a>
+
+</div>
+{% endblock %}

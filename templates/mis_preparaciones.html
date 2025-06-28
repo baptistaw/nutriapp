@@ -87,9 +87,18 @@
                 </div>
 
                 <div class="mb-3">
-                    <label for="prep_suitability_tags" class="form-label">Tags de Adecuación (Enter o coma para separar):</label>
-                    <input type="text" id="prep_suitability_tags" name="suitability_tags" class="form-control form-control-sm" placeholder="Ej: diabetico, bajo_sodio, alto_proteina">
-                    <small class="form-text text-muted">Estos tags ayudarán a filtrar preparaciones para pacientes específicos.</small>
+                    <label for="prep_suitability_tags" class="form-label">Tag de Adecuación Principal:</label>
+                    <select class="form-select form-select-sm" id="prep_suitability_tags" name="suitability_tag">
+                        <option value="">-- Ninguno --</option>
+                        {% if available_suitability_tags %}
+                            {% for tag_option in available_suitability_tags %}
+                                <option value="{{ tag_option.value }}">{{ tag_option.display }}</option>
+                            {% endfor %}
+                        {% else %}
+                            <option value="" disabled>No hay tags disponibles</option>
+                        {% endif %}
+                    </select>
+                    <small class="form-text text-muted">Este tag ayudará a filtrar preparaciones.</small>
                 </div>
                 
                 <div class="mb-3">
@@ -176,6 +185,16 @@
         const addIngredientButton = document.getElementById('btn-add-ingredient');
 
         let tagifyTags;
+
+        // --- CSRF Token Helper (local para esta página) ---
+        function getCsrfToken() {
+            const csrfTokenElement = document.querySelector('meta[name="csrf-token"]');
+            if (csrfTokenElement) {
+                return csrfTokenElement.getAttribute('content');
+            }
+            console.error("CSRF token no encontrado en la meta etiqueta.");
+            return null;
+        }
         const tagsInputElement = document.querySelector('input[name=suitability_tags]');
         if (tagsInputElement) {
             tagifyTags = new Tagify(tagsInputElement, {
@@ -189,13 +208,19 @@
         // --- Funciones para Ingredientes Dinámicos ---
         function addIngredientRow(ingredient = { item: '', quantity: '', unit: '' }) {
             const newRow = document.createElement('div');
+            // Log para ver el objeto ingredient completo que llega a esta función
+            console.log("DEBUG_MIS_PREPS: addIngredientRow - Recibido:", JSON.parse(JSON.stringify(ingredient)));
+
             newRow.classList.add('ingredient-row', 'row', 'g-2', 'mb-2', 'align-items-center');
             newRow.innerHTML = `
                 <div class="col-md-5">
-                    <input type="text" class="form-control form-control-sm ingredient-name" placeholder="Nombre del Ingrediente" value="${ingredient.item || ''}" required>
+                    <input type="text" class="form-control form-control-sm ingredient-name" placeholder="Nombre del Ingrediente" value="${
+                        (ingredient.original_description !== undefined && ingredient.original_description !== null) ? ingredient.original_description :
+                        (ingredient.parsed_item_name || ingredient.item || '') // Fallbacks
+                    }" required>
                 </div>
                 <div class="col-md-3">
-                    <input type="number" class="form-control form-control-sm ingredient-quantity" placeholder="Cantidad" step="any" value="${ingredient.quantity || ''}" required>
+                    <input type="number" class="form-control form-control-sm ingredient-quantity" placeholder="Cantidad" step="any" value="${ingredient.quantity !== undefined && ingredient.quantity !== null ? ingredient.quantity : ''}" required>
                 </div>
                 <div class="col-md-3">
                     <select class="form-select form-select-sm ingredient-unit" required>
@@ -238,11 +263,27 @@
         async function loadPreparations() {
             tableBody.innerHTML = '<tr><td colspan="4" class="text-center">Cargando preparaciones...</td></tr>';
             try {
-                const response = await fetch('/api/preparations');
-                if (!response.ok) throw new Error(`Error al cargar preparaciones: ${response.statusText}`);
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    throw new Error('No estás autenticado. Por favor, inicia sesión.');
+                }
+
+                const response = await fetch('/api/preparations', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'X-CSRFToken': getCsrfToken() // Añadir token CSRF
+                    }
+                });
+
+                if (response.status === 401) {
+                    throw new Error('Tu sesión ha expirado. Por favor, inicia sesión de nuevo.');
+                }
+                if (!response.ok) {
+                    throw new Error(`Error al cargar preparaciones: ${response.statusText}`);
+                }
                 const preparations = await response.json();
 
-                tableBody.innerHTML = ''; 
+                tableBody.innerHTML = '';
                 if (preparations.length === 0) {
                     tableBody.innerHTML = '<tr><td colspan="4" class="text-center">No hay preparaciones guardadas.</td></tr>';
                     return;
@@ -256,10 +297,17 @@
                     
                     const actionsCell = row.insertCell();
                     actionsCell.classList.add('text-end');
+                    
+                    // Botón Editar Modificado
                     const editButton = document.createElement('button');
+                    // Quitar 'btn-edit-user-preparation' para que no lo tome el listener global de main.js
                     editButton.classList.add('btn', 'btn-sm', 'btn-outline-primary', 'me-1');
+                    editButton.setAttribute('data-preparation-id', prep.id);
+                                        
                     editButton.innerHTML = '<i class="fas fa-edit"></i> Editar';
-                    editButton.onclick = () => editPreparation(prep.id);
+                    // Restaurar el onclick para que lo maneje la función local editPreparation(id)
+                    editButton.onclick = () => editPreparation(prep.id); 
+                    
                     actionsCell.appendChild(editButton);
 
                     const deleteButton = document.createElement('button');
@@ -270,7 +318,11 @@
                 });
             } catch (error) {
                 console.error('Error cargando preparaciones:', error);
-                tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error al cargar preparaciones.</td></tr>';
+                let errorMessage = 'Error al cargar preparaciones.';
+                if (error.message.includes('autenticado') || error.message.includes('expirada')) {
+                    errorMessage = error.message;
+                }
+                tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">${errorMessage}</td></tr>`;
             }
         }
 
@@ -294,8 +346,26 @@
 
         async function editPreparation(id) {
             try {
-                const response = await fetch(`/api/preparations/${id}`);
-                if (!response.ok) throw new Error(`Error al obtener preparación: ${response.statusText}`);
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    alert('No estás autenticado. Por favor, inicia sesión.');
+                    return;
+                }
+
+                const response = await fetch(`/api/preparations/${id}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'X-CSRFToken': getCsrfToken() // Añadir token CSRF
+                    }
+                });
+
+                if (response.status === 401) {
+                    alert('Tu sesión ha expirado. Por favor, inicia sesión de nuevo.');
+                    return;
+                }
+                if (!response.ok) {
+                    throw new Error(`Error al obtener preparación: ${response.statusText}`);
+                }
                 const prep = await response.json();
 
                 preparationIdInput.value = prep.id;
@@ -355,7 +425,30 @@
                 return;
             }
             try {
-                const response = await fetch(`/api/preparations/${id}`, { method: 'DELETE' });
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    alert('No estás autenticado. Por favor, inicia sesión.');
+                    return;
+                }
+
+                const response = await fetch(`/api/preparations/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'X-CSRFToken': getCsrfToken() // Añadir token CSRF
+                    }
+                });
+
+                if (response.status === 401) {
+                    alert('Tu sesión ha expirado. Por favor, inicia sesión de nuevo.');
+                    return;
+                }
+                
+                if (response.status === 403) {
+                    throw new Error('No tienes permiso para realizar esta acción.');
+                     return;
+                }
+                         
                 if (!response.ok) {
                      const errorData = await response.json().catch(() => ({error: `Error al eliminar: ${response.statusText}`}));
                      throw new Error(errorData.error);
@@ -417,9 +510,11 @@
             // delete data.ingredients_text; 
 
             if (data.suitability_tags && typeof data.suitability_tags === 'string') {
-                 data.suitability_tags = data.suitability_tags.split(',').map(tag => tag.trim()).filter(tag => tag);
+                // El campo ahora se llama 'suitability_tag' y es un solo valor del select
+                data.suitability_tag = data.suitability_tags; // Renombrar para el backend
+                delete data.suitability_tags; // Eliminar el antiguo
             } else {
-                 data.suitability_tags = []; 
+                data.suitability_tag = data.suitability_tags; // Podría ser null o vacío si no se seleccionó
             }
 
             data.num_servings = parseFloat(data.num_servings) || 1.0;
@@ -432,13 +527,28 @@
             }
 
             try {
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    alert('No estás autenticado. Por favor, inicia sesión.');
+                    return;
+                }
+
                 const response = await fetch(url, {
                     method: method,
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        'X-CSRFToken': getCsrfToken() // Añadir token CSRF
+                    },
                     body: JSON.stringify(data)
                 });
+                if (response.status === 401) {
+                    throw new Error('Sesión expirada. Por favor, inicia sesión de nuevo.');
+                }
                 const result = await response.json();
-                if (!response.ok) throw new Error(result.error || `Error ${response.status}`);
+                if (!response.ok) {
+                    throw new Error(result.error || `Error ${response.status}`);
+                }
                 
                 alert(prepId ? 'Preparación actualizada correctamente.' : 'Preparación guardada correctamente.');
                 resetForm();

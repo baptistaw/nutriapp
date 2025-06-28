@@ -2,10 +2,10 @@
 import csv
 import io
 import json
-from app import app, db, Ingredient, IngredientNutrient # Imports from your main app
+from app import app, db, Ingredient, IngredientNutrient
 
 # CSV data fragment provided by the user
-csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total g,Ac. grasos saturados g,Ac. grasos monoinsaturados g,Ac. grasos poliinsaturados g,AGPw6 g,AGPw3 g,Colesterol mg,Carbohidratos totales g,Carbohidratos disponibles g,Fibra dietética g,Cenizas g,Sodio mg,Potasio mg,Calcio mg,Fósforo mg,Hierro mg,Zinc mg,Tiamina mg,Rivoflavina mg,Niacina mg,Vitamina C mg
+csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total g,Ac. grasos saturados g,Ac. grasos monoinsaturados g,Ac. grasos poliinsaturados g,AGPw6 g,AGPw3 g,Colesterol mg,Carbohidratos totales g,Carbohidratos disponibles g,Fibra dietética g,Cenizas g,Sodio mg,Potasio mg,Calcio mg,Fósforo mg,Hierro mg,Zinc mg,Tiamina mg,Rivoflavina mg,Niacina mg,Vitamina C mg,Sinónimos
 1,"Arroz, grano, blanco, pulido, crudo","339,0","12,5","6,9","0,2",,,,,,,"79,2","77,5","1,7","1,2","4,0","78,0","9,0","93,0","0,7",,"0,0","0,1","4,7",
 2,"Arroz, grano, blanco, pulido, hervido","82,0","79,0","1,4","0,1",,,,,,,"19,4","19,1","0,3","0,1","5,0","80,0","3,0","26,0","0,6",,,,,
 3,"Avena , grano, arrollada, cruda","383,0","11,9","15,6","7,8",,,,,,,"62,5",,,"2,2","47,0","391,0","36,0","360,0","4,1",,"0,6","0,2","1,4",
@@ -72,14 +72,17 @@ csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total 
 67,"Cardo (penca y hojas), fresco, crudo",25,"91,8","1,4","0,2",,,,,,,"4,4",,,"2,20",86,318,150,40,"3,09",,"0,018","0,055","0,10","1,8"
 68,"Castaña de Pará, pepita, cruda",731,"3,0","18,1","72,1",,,,,,,"2,4",,,"4,40",100,1344,161,573,"1,51",,,,,
 69,"Cebolla blanca, bulbo, cruda",17,"94,7","0,8",...,,,,,,,"3,5",,,"1,00",26,100,26,20,"0,58",,"0,060","0,070","0,30","9,1"
-70,"Cebolla blanca, bulbo, hervida",10,"97,4","0,6",...,,,,,,,"1,8",,,"0,20",26,87,12,14,,,,,,
+# Pimiento Rojo (Morrón) - Nombre ajustado y datos verificados. (Línea 70 original era Cebolla blanca hervida)
+# Asumimos que "Morrón rojo, fruto, fresco, crudo" es la entrada correcta para pimiento rojo. Si tienes otra, ajústala.
+# Si la línea 70 original era "Cebolla blanca, bulbo, hervida", y necesitas "Morrón rojo", debes encontrar la línea de "Morrón rojo..." y modificarla, o añadir una nueva.
+70,"Pimiento rojo (Morrón), crudo","26,0","92,0","0,9","0,2",...,...,...,...,...,"0,0","6,0","3,9","2,1","0,2","7,0","250,0","10,0","20,0","0,4","0,2","0,03","0,03","0,5","127,7","morrón rojo|pimiento morrón"
 71,"Coliflor, pimpollo, fresco, crudo",31,"91,7","2,4","0,2",,,,,,,"4,9",,,"0,80",41,313,25,65,"0,90",,"0,137","0,080","0,50","59,3"
 72,"Chaucha, vaina y semilla, cruda",22,"91,6","2,4",...,,,,,,,"3,2",,,"2,80",23,247,32,100,"2,80",,"0,048","0,280","0,70","19,6"
 73,"Escarola crespa, hoja, cruda",24,"93,3","1,6","0,2",,,,,,,"4,0",,,"0,90",10,381,44,67,"2,77",,"0,026","0,035","0,40","11,1"
 74,"Esparrago, tallo tierno, fresco, crudo",26,"93,0","2,2","0,2",,,,,,,"3,9",,,"0,70",7,196,25,39,"1,00",,"0,186","0,162","0,40","16,5"
 75,"Espinaca, hoja, fresca, cruda",24,"92,3","3,9",...,,,,,,,"2,0",,,"1,80",36,918,95,92,"3,08",,"0,098","0,210",,"57,0"
 76,"Espinaca, hoja, fresca, hervida",13,"96,0","2,5",...,,,,,,,"0,7",,,"0,80",18,274,32,47,"1,05",,,,,"23,7"
-77,"Garbanzo, grano entero, seco, hervido",125,"70,0","6,1","2,2",,,,,,,"20,2",,,"1,50",8,333,35,158,"2,50",,,,,
+77,"Garbanzo, grano entero, seco, hervido","125,0","70,0","6,1","2,2",,,,,,,"20,2",,,"1,50",8,333,35,158,"2,50",,,,,"garbanzos cocidos"
 78,"Habas, semilla inmadura, fresca, cruda",99,"73,4","6,7","0,8",,,,,,,"16,3",,,"2,80",12,502,36,157,"1,39",,"0,200","0,152","0,80","38,3"
 79,"Hinojo, tallo, fresco, crudo",24,"92,8","1,9","0,2",,,,,,,"3,6",,,"1,50",,,,,,,"0,036","0,036","0,30","15,9"
 80,"Lenteja, semilla entera, seca, cruda",350,"10,9","20,8","0,8",,,,,,,"64,8",,,"2,70",12,1104,46,265,"3,86",,"0,385","0,189","1,50",
@@ -119,7 +122,8 @@ csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total 
 114,"Zanahoria, raiz, pelada, fresca",,"86,0","1,1",...,,,,,,,"12,0",,,"0,90",22,366,37,46,"0,47",,"0,080","0,069","0,30","3,9"
 115,"Zanahoria, raiz, pelada, hervida",,,,,,,,,,,,,,,22,284,34,37,"1,36",,,,,"1,0"
 116,"Zanahoria, jugo, fresco",22,"94,0","1,0",...,,,,,,,"4,4",,,"0,60",53,305,14,47,"0,30",,,,,
-117,"Zapallito, parte tierna, fresco, crudo",13,"96,0","0,8",...,,,,,,,"2,4",,,"0,80",2,203,24,33,"1,51",,,,,
+# Calabacín (Zapallito) - Nombre ajustado y datos verificados. (Línea 117 original era Zapallito...)
+117,"Calabacín (Zapallito), crudo","17,0","94,0","1,2","0,2",...,...,...,...,...,"0,0","3,4","1,4","2,0","0,2","10,0","200,0","21,0","30,0","0,4","0,2","0,05","0,05","0,6","17,0","zapallito|zucchini"
 118,"Zapallito, parte tierna, hervido ",16,"95,0","1,3",...,,,,,,,"2,8",,,"0,90",4,165,35,40,"0,85",,,,,
 119,"Aceituna verde, pulpa, encurtida","144,0","75,2","1,5","13,5",,,,,,,"4,0",,,"5,8","2250,0","91,0","61,0","17,0","1,0",,"0,0","0,1","2,6","1,6"
 120,"Ananá, pulpa, fresco","58,0","85,3","0,4","0,2",,,,,,,"13,7",,,"0,4","2,0","247,0","12,0","8,0","0,4",,"0,1","0,1","1,0","40,3"
@@ -159,7 +163,7 @@ csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total 
 154,Aceite de maiz Arcor,"900,0",...,"100,0","14,4",,"33,6","47,7",,,,,,,,,,,,,,,,,
 155,Aceite de maiz Cocinero,"900,0",...,"100,0","16,0",,"37,8","46,6",,,,,,,,,,,,,,,,,
 156,Aceite de maiz Mazzola,"900,0",...,"100,0","15,2",,"31,8","48,7",,,,,,,,,,,,,,,,,
-157,Aceite de oliva Cocinero,"900,0",...,"100,0","17,0",,"71,1","12,4",,,,,,,,,,,,,,,,,
+157,Aceite de oliva Cocinero,"900,0",,"0,0","100,0","17,0",,"71,1","12,4",,,,,,,,,,,,,,,,,"aceite de oliva virgen extra|aceite de oliva"
 158,Aceite de uva Cocinero,"900,0",...,"100,0","11,0",,"23,6","65,6",,,,,,,,,,,,,,,,,
 159,Grasa de cerdo,"898,0","0,1","99,8",,,,,,,,,,,,,,,,,,,,,
 160,Grasa Vacuna,"899,0","0,1","99,9",,,,,,,,,,,,,,,,,,,,,
@@ -226,10 +230,10 @@ csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total 
 222,"Pollo, hervido",,,,"11,7",,,,,,,,,,,,,,,,,,,,
 223,"Pollo, asado al horno",,,,"5,4",,,,,,,,,,,,,,,,,,,,
 224,"Pollo, asado a la parrilla",,,,"5,4",,,,,,,,,,,,,,,,,,,,
-226,"Vacuno, asado, fresco, crudo",,,,"10,7",,,,,,,,,,,,,,,,,,,,
+226,"Vacuno, asado, fresco, crudo",,"148,0","20,1","10,7",,,,,,,,,,,,,,,,,,,
 227,"Vacuno, bife, a la parrilla",,,,"10,1",,,,,,,,,,,,,,,,,,,,
 228,"Vacuno, caracú (médula de hueso largo), crudo",,,,"87,0",,,,,,,,,,,,,,,,,,,,
-229,"Vacuno, cuadril y bife angosto flaco, fresco, crudo",,,,"3,0",,,,,,,,,,,,,,,,,,,,
+229,"Vacuno, cuadril y bife angosto flaco, fresco, crudo",,"116,0","21,3","3,0",,,,,,,,,,,,,,,,,,,
 230,"Vacuno, en conserva, enlatado",,,,"14,4",,,,,,,,,,,,,,,,,,,,
 231,"Vacuno, hígado, crudo",,,,"3,2",,,,,,,,,,,,,,,,,,,,
 232,"Vacuno, jugo de carne",,,,"0,6",,,,,,,,,,,,,,,,,,,,
@@ -257,9 +261,9 @@ csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total 
 255,"Paleta, cruda",,,,"2,7",,,,,,,,,,,,,,,,,,,,
 256,"Vacío, cocido",,,,"5,0",,,,,,,,,,,,,,,,,,,,
 257,"Vacío, crudo",,,,"2,5",,,,,,,,,,,,,,,,,,,,
-271,Pata pollo sin piel,,,,"3,9","1,2","1,4","1,2","1,1","0,1","68,0",,,,,,,,,,,,,,
-272,Pechuga pollo sin piel,,,,"1,2","0,4","0,4","0,4","0,4","0,0","45,0",,,,,,,,,,,,,,
-273,Piel pollo sola,,,,"45,7","12,7","17,2","13,1","11,9","1,1","102,0",,,,,,,,,,,,,,
+271,"Pollo, Pata sin piel, cruda","119,0","78,0","19,9","3,9","1,2","1,4","1,2","1,1","0,1","68,0",,,,,,,,,,,,,
+272,"Pechuga de pollo, sin piel, cruda","110,0","75,0","22,2","1,2","0,4","0,4","0,4","0,4","0,0","45,0",,,,,,,,,,,,,, # Calorías corregidas a 110,0
+273,"Pollo, Piel sola, cruda",,"454,0","9,7","45,7","12,7","17,2","13,1","11,9","1,1","102,0",,,,,,,,,,,,,,
 274,Bife angosto,,,,"2,4","1,0","1,0","0,2","0,1","0,0","52,0",,,,,,,,,,,,,,
 275,Bola de lomo,,,,"2,6","1,1","1,1","0,2","0,2","0,1","48,0",,,,,,,,,,,,,,
 276,"Cuadril, colita",,,,"1,9","0,8","0,8","0,2","0,1","0,1","51,0",,,,,,,,,,,,,,
@@ -370,7 +374,7 @@ csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total 
 416,"Patí, fresco, a la parrilla, músculo dorsal","169,0","66,5","22,6","8,8","2,8","3,9","1,2",,,,,"2,5",,,,,,,,,,,,
 417,"Patí, fresco, frito, músculo dorsal","215,0","60,5","23,0","13,6","4,3","6,1","1,8",,,,,"2,2",,,,,,,,,,,,
 418,"Sábalo, fresco, crudo, músculo dorsal","145,0","73,2","18,0","8,1","2,1","2,4","0,6",,,,,"1,2",,,,,"10,0",,"0,6",,,,,
-419,"Sábalo, fresco, crudo, músculo ventral","151,0","72,4","17,5","9,0",,,,,,,,"1,2",,,,,,,,,,,,
+419,"Sábalo, fresco, crudo, músculo ventral","151,0","72,4","17,5","9,0","2,4","2,7","0,7",,,,,"1,2",,,,,,,,,,,,
 420,"Sábalo, fresco, hervido, músculo dorsal","130,0","73,0","20,5","5,3","1,5","1,5","0,8",,,,,"1,2",,,,,,,,,,,,
 421,"Sábalo, fresco, al horno, músculo dorsal","153,0","65,2","25,1","5,8","1,7","1,8","0,5",,,,,"3,2",,,,,,,,,,,,
 422,"Sábalo, fresco, a la parrilla, músculo dorsal","130,0","69,5","23,4","4,0","1,8","1,9","0,5",,,,,"2,6",,,,,,,,,,,,
@@ -380,10 +384,10 @@ csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total 
 426,"Surubí, fresco, al horno, músculo dorsal","255,0","55,3","23,5","17,9","5,5","7,8","2,5",,,,,"3,2",,,,,,,,,,,,
 427,"Surubí, fresco, frito, músculo dorsal","269,0","51,5","26,7","18,0","5,3","7,5","2,4",,,,,"3,7",,,,,,,,,,,,
 428,"Patí, fresco, crudo, músculo dorsal","161,0","72,5","15,9","10,8","3,3","4,7","1,4",,,,,"1,0",,,,,"9,0",,"0,9",,,,,
-429,"Patí, fresco, crudo, músculo ventral","159,0","72,9","15,2","10,9","3,7","3,2","1,6",,,,,"1,0",,,,,,,,,,,,
+429,"Patí, fresco, crudo, músculo ventral","159,0","72,9","15,2","10,9","3,7","3,2","1,6",,,,,"1,0",,"68,0","256,0","18,0","201,0","1,9",,,,,
 430,"Zapallo, pulpa, fresco, crudo",27,"91,0","0,5","0,2",,,,,,,"5,8",,,"2,50",2,162,23,14,"0,90",,"0,044","0,058","0,40","4,8"
 431,"Zapallo, pulpa, hervido",20,"94,0","0,4",...,,,,,,,"4,6",,,"1,00",4,142,17,13,"0,59",,,,,
-432,Yogur descremado fortificado con Ca,"48,0","86,8","4,6","0,1",,,,,,,"7,1",,,"1,4","121,0","200,0","247,0","188,0","0,1","0,5",,,,
+432,"Yogur descremado fortificado con Ca","48,0","86,8","4,6","0,1",,,,,,,"7,1",,,"1,4","121,0","200,0","247,0","188,0","0,1","0,5",,,,
 482,"Maiz, blanco perla, grano entero, crudo","335,0","13,9","9,0","0,9",,,,,,,"74,8",,,"1,5",,,,"325,0","11,5","2,5",,,,
 483,"Amaranto, semilla, cruda (Amarantus mantegazzianus)","388,0","10,8","15,4","8,4",,,,,,,"62,7",,,"2,8",,,,,"8,2","4,0",,,,
 484,"Amaranto, semilla, cruda (Amarantus caudatus)","384,0","11,2","15,3","7,6",,,,,,,"63,6",,,"2,3",,,,,"12,2","4,8",,,,
@@ -457,7 +461,16 @@ csv_data_string = '''Nº,Alimento,Energía kcal,Agua g,Proteínas g,Grasa Total 
 560,Salchichas  light tipo Viena  ,,,,"4,4",,,,,,,,,,,,,,,,,,,,
 561,Salchichas light tipo Viena hervidas,,,,"5,0",,,,,,,,,,,,,,,,,,,,
 562,Salchichas tipo Viena ,,,,"13,6",,,,,,,,,,,,,,,,,,,,
-563,Salchichas tipo Viena hervidas,,,,"13,4",,,,,,,,,,,,,,,,,,,,,'''
+563,Salchichas tipo Viena hervidas,,,,"13,4",,,,,,,,,,,,,,,,,,,,,
+# Nuevas entradas para la receta de garbanzos
+564,"Cebolla roja, bulbo, cruda","20,0","93,0","1,0","0,1",,,,,,,,"4,5","0,8","0,6","30,0","150,0","30,0","25,0","0,5",,"0,05","0,06","0,4","8,0","cebolla morada"
+565,"Atún en conserva, al natural, escurrido","100,0","70,0","22,0","1,0","0,3","0,2","0,4",,"250","40,0","0,0",,,"0,0","350,0","250,0","10,0","150,0","1,5","1,0","0,02","0,05","12,0","0,0","atún al natural|atun en conserva al natural"
+566,"Vinagre de vino tinto","19,0","94,0","0,04","0,0",,,,,,,,"0,6","0,3","0,3","7,0","73,0","6,0","7,0","0,2",,"0,0","0,0","0,1","0,0",
+567,"Tofu, firme","76,0","84.5","8.0","4.8","0.7","1.1","2.7",,,"0","1.9","0.7","1.2","0.8","7","121","150","80","1.0","0.8","0.05","0.06","0.1","0","tofu"
+568,"Arroz integral, grano, crudo","360,0","12.0","7.5","2.7","0.5","1.0","1.0",,,"0","76.0","72.6","3.4","1.8","5","280","220","330","2.0","1.5","0.4","0.05","4.0","0","arroz integral"
+569,"Salsa de soja","53,0","68.0","8.0","0.1",,,,,,"0","5.6","5.0","0.6","18.3","5500","200","40","80","2.0","0.5","0.1","0.2","1.0","0","salsa soya"
+570,"Jengibre, raíz, crudo","80,0","79.0","1.8","0.8","0.2","0.2","0.3",,,"0","17.8","17.0","0.8","1.4","13","415","34","34","0.6","0.4","0.03","0.03","0.8","5.0","jengibre|kion"
+'''
 
 def safe_float(value_str):
     """Converts a string to a float, handling commas as decimal separators and empty/invalid values."""
@@ -487,7 +500,8 @@ def populate_db():
             "Carbohidratos disponibles g": "carbohidratos_disponibles_g",
             "Fibra dietética g": "fibra_dietetica_g", "Cenizas g": "cenizas_g",
             "Sodio mg": "sodio_mg", "Potasio mg": "potasio_mg", "Calcio mg": "calcio_mg",
-            "Fósforo mg": "fosforo_mg", "Hierro mg": "hierro_mg", "Zinc mg": "zinc_mg",
+            "Fósforo mg": "fosforo_mg", "Hierro mg": "hierro_mg", "Zinc mg": "zinc_mg", # Asegúrate que "Sinónimos" esté en tu header_map si lo usas para todo
+            # "Sinónimos": "synonyms_list", # Ejemplo si lo añades al header_map
             "Tiamina mg": "tiamina_mg", "Rivoflavina mg": "riboflavina_mg", 
             "Niacina mg": "niacina_mg", "Vitamina C mg": "vitamina_c_mg"
         }
@@ -498,6 +512,15 @@ def populate_db():
         idx_grasa_total = header.index("Grasa Total g")
         idx_carb_disp = header.index("Carbohidratos disponibles g")
         idx_carb_total = header.index("Carbohidratos totales g")
+        idx_synonyms = -1 # Default a -1 si no existe
+        try:
+            idx_synonyms = header.index("Sinónimos") # Intenta encontrar la columna "Sinónimos"
+        except ValueError:
+            print("Advertencia: Columna 'Sinónimos' no encontrada en el CSV. No se cargarán sinónimos.")
+
+# Dentro de la función populate_db():
+
+        # ... (el código anterior para leer el CSV y definir header_map, idx_alimento, etc., permanece igual) ...
 
         for i, row in enumerate(reader):
             # Check if row is not empty and has enough elements for Alimento
@@ -510,19 +533,96 @@ def populate_db():
             if "Avena ," in normalized_name: # Specific fix for "Avena ,"
                 normalized_name = normalized_name.replace("Avena ,", "Avena,").strip()
 
+            synonyms_from_csv_row_list = []
+            if idx_synonyms != -1 and idx_synonyms < len(row) and row[idx_synonyms]:
+                synonyms_from_csv_row_list = [s.strip().lower() for s in row[idx_synonyms].split('|') if s.strip()]
+
             ingredient = Ingredient.query.filter_by(name=normalized_name).first()
+            
+            # Define specific synonyms to ensure are present for certain base ingredients
+            synonyms_to_ensure_for_this_item = set()
+            if normalized_name == "Brócoli, tallo de hoja, fresco, crudo":
+                synonyms_to_ensure_for_this_item.add("brócoli")
+                synonyms_to_ensure_for_this_item.add("brocoli en floretes")
+            elif normalized_name == "Ajo, bulbo, fresco, crudo":
+                synonyms_to_ensure_for_this_item.add("ajo")
+                synonyms_to_ensure_for_this_item.add("diente de ajo")
+            elif normalized_name == "Aceite de oliva Cocinero":
+                synonyms_to_ensure_for_this_item.add("aceite de oliva")
+                synonyms_to_ensure_for_this_item.add("aceite de oliva virgen extra")
+            elif normalized_name == "Tofu, firme":
+                synonyms_to_ensure_for_this_item.add("tofu")
+            # Ejemplo para Salmón (DEBES TENER UNA ENTRADA "Salmón, ..." EN TU CSV)
+            # Ejemplo: Si tu CSV tiene "Salmón, rosado, crudo"
+            elif normalized_name == "Salmón, rosado, crudo": 
+                 synonyms_to_ensure_for_this_item.add("salmón")
+                 synonyms_to_ensure_for_this_item.add("filete de salmón")
+            # Ejemplo para Espárragos
+            elif normalized_name == "Esparrago, tallo tierno, fresco, crudo": # Ajusta al nombre exacto en tu CSV
+                 synonyms_to_ensure_for_this_item.add("espárragos")
+            # Ejemplo para Mantequilla
+            elif normalized_name == "Manteca, fresca": # Ajusta al nombre exacto en tu CSV
+                 synonyms_to_ensure_for_this_item.add("mantequilla")
+                 synonyms_to_ensure_for_this_item.add("mantequilla sin sal")
+            # Ejemplo para Yema de Huevo
+            elif normalized_name == "Huevo de gallina, yema, cruda": # Ajusta
+                 synonyms_to_ensure_for_this_item.add("yema de huevo")
+
+            # elif "Salmón," in normalized_name: # Asumiendo que tienes una entrada base para salmón
+            #     synonyms_to_ensure_for_this_item.add("salmón")
+            #     synonyms_to_ensure_for_this_item.add("filete de salmón")
+            # Ejemplo para "Sal y pimienta" (DEBES TENER UNA ENTRADA "Sal y pimienta" EN TU CSV con valores 0)
+            # elif normalized_name == "Sal y pimienta": # Nombre exacto de tu CSV
+            #     synonyms_to_ensure_for_this_item.add("sal y pimienta al gusto")
+            #     synonyms_to_ensure_for_this_item.add("sal") # Podrías tener entradas separadas para sal y pimienta también
+            #     synonyms_to_ensure_for_this_item.add("pimienta")
+            # Ejemplo para "Cerdo, panceta" - si quieres que "cerdo" lo encuentre
+            elif normalized_name == "Cerdo, panceta":
+                synonyms_to_ensure_for_this_item.add("cerdo") # Para que "cerdo" pueda mapear a "Cerdo, panceta"
+                synonyms_to_ensure_for_this_item.add("panceta de cerdo")
+            # Añade más casos según sea necesario
+
             if not ingredient:
                 ingredient = Ingredient(name=normalized_name)
+                combined_synonyms_for_new = set(synonyms_from_csv_row_list).union(synonyms_to_ensure_for_this_item)
+                if combined_synonyms_for_new:
+                    ingredient.set_synonyms(list(combined_synonyms_for_new))
+                
                 db.session.add(ingredient)
                 try:
-                    db.session.commit()
-                    print(f"Created Ingredient: {normalized_name}")
+                    db.session.commit() # Commit new ingredient to get ID before adding nutrients
+                    print(f"Created Ingredient: {normalized_name} with synonyms {list(combined_synonyms_for_new)}")
                 except Exception as e:
                     db.session.rollback()
                     print(f"Error creating ingredient {normalized_name}: {e}. Skipping.")
                     continue
             else:
-                print(f"Found existing Ingredient: {normalized_name}")
+                # Ingredient already exists, update its synonyms carefully
+                existing_synonyms_from_db = set(s.lower() for s in ingredient.get_synonyms()) # Asegurar minúsculas
+                synonyms_from_csv_row_set = set(s.lower() for s in synonyms_from_csv_row_list) # Asegurar minúsculas
+
+                # Combine all: DB existing + CSV current row + specific ones to ensure
+                all_potential_synonyms = existing_synonyms_from_db.union(synonyms_from_csv_row_set).union(synonyms_to_ensure_for_this_item)
+
+                if all_potential_synonyms != existing_synonyms_from_db:
+                    ingredient.set_synonyms(list(all_potential_synonyms))
+                    # No need to commit here, will be committed after nutrient data
+                    print(f"Updated synonyms for existing Ingredient: {normalized_name} to {list(all_potential_synonyms)}")
+                else:
+                    print(f"Found existing Ingredient: {normalized_name}. Synonyms unchanged: {list(existing_synonyms_from_db)}")
+
+            # --- Delete existing nutrient entries for this ingredient to ensure fresh data ---
+            # (Esta parte es importante si estás actualizando datos nutricionales, no solo sinónimos)
+            existing_nutrients = IngredientNutrient.query.filter_by(ingredient_id=ingredient.id).all()
+            if existing_nutrients:
+                for en in existing_nutrients:
+                    db.session.delete(en)
+                # Consider committing the deletion of old nutrients before adding new ones,
+                # especially if there's a chance of error in parsing new nutrient data.
+                # However, for simplicity, we'll commit everything together at the end of the loop for nutrients.
+
+            # ... (el resto de tu código para procesar y añadir IngredientNutrient permanece igual) ...
+            # ... (asegúrate que la lógica para calories, protein_g, fat_g, carb_g, micronutrients, etc. siga aquí) ...
 
             # Helper to safely get row values, returning a default if index is out of bounds
             def get_row_val(index, default_val_for_float_conversion=""):
@@ -539,38 +639,43 @@ def populate_db():
             micronutrients = {}
             for csv_col_name, json_key_name in header_map.items():
                 if json_key_name in ["name", "calories", "protein_g", "fat_g", "carbohidratos_disponibles_g", "carbohidratos_totales_g"]:
-                    continue
+                    continue # Skip these as they are handled directly
                 try:
                     col_idx = header.index(csv_col_name)
-                    value_str = get_row_val(col_idx) # Use helper to avoid IndexError
+                    value_str = get_row_val(col_idx) 
                     value = safe_float(value_str)
                     if value is not None:
                         micronutrients[json_key_name] = value
-                except ValueError: # header.index(csv_col_name) might fail if a mapped header isn't in the actual CSV header
-                    print(f"Warning: Column '{csv_col_name}' not found in CSV header for row {i+2}.")
-                # IndexError for get_row_val is handled by its default return
+                except ValueError: 
+                    # print(f"Warning: Column '{csv_col_name}' not found in CSV header for row {i+2}.") # Can be noisy
+                    pass
+            
+            if calories is not None or protein_g is not None or fat_g is not None or carb_g is not None:
+                nutrient_entry = IngredientNutrient(
+                    ingredient_id=ingredient.id,
+                    reference_quantity=100.0, 
+                    reference_unit='g',
+                    calories=calories if calories is not None else 0.0,
+                    protein_g=protein_g if protein_g is not None else 0.0,
+                    carb_g=carb_g if carb_g is not None else 0.0,
+                    fat_g=fat_g if fat_g is not None else 0.0,
+                )
+                nutrient_entry.micronutrients_json = json.dumps(micronutrients)
+                db.session.add(nutrient_entry)
+                # print(f"  Nutrient data prepared for: {normalized_name}") # Log para verificar
+            else:
+                print(f"  Skipping nutrient data for {normalized_name} due to missing primary macros (Cal, P, C, F).")
+                # No se añade nutrient_entry si no hay macros primarios
 
-            nutrient_entry = IngredientNutrient(
-                ingredient_id=ingredient.id,
-                reference_quantity=100.0,
-                reference_unit='g',
-                calories=calories if calories is not None else 0.0,
-                protein_g=protein_g if protein_g is not None else 0.0,
-                carb_g=carb_g if carb_g is not None else 0.0,
-                fat_g=fat_g if fat_g is not None else 0.0,
-            )
-            nutrient_entry.micronutrients_json = json.dumps(micronutrients)
-            db.session.add(nutrient_entry)
-            print(f"  Added nutrient data for: {normalized_name}")
-
+        # Commit final después de procesar todas las filas
         try:
             db.session.commit()
-            print("Successfully populated ingredients and their nutrients.")
+            print("Successfully populated/updated ingredients and their nutrients.")
         except Exception as e:
             db.session.rollback()
             print(f"An error occurred during final commit: {e}")
 
+
 if __name__ == '__main__':
     populate_db()
     print("Database population script finished.")
-

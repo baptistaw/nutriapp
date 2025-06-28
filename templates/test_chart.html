@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Chart.js Time Adapter (Moment.js)</title>
+</head>
+<body>
+    <h1>Test Chart (Moment.js)</h1>
+    <div style="width: 80%; margin: auto;">
+        <canvas id="myTestChart"></canvas>
+    </div>
+
+    <!-- Carga los scripts locales -->
+    <script src="{{ url_for('static', filename='js/libs/moment.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/chart.min.js') }}"></script>
+    <script>
+        console.log("TEST PAGE - SCRIPT CHECK 1: After Moment.js and Chart.js core load. typeof Moment:", typeof Moment, "typeof Chart:", typeof Chart,
+                    "Chart.adapters:", Chart && typeof Chart.adapters !== 'undefined' ? JSON.stringify(Chart.adapters) : (Chart ? 'Chart.adapters is undefined' : 'Chart is undefined'));
+    </script>
+    <script src="{{ url_for('static', filename='js/libs/chartjs-adapter-moment.min.js') }}"></script>
+    <script>
+        console.log("TEST PAGE - SCRIPT CHECK 2: After chartjs-adapter-moment load. typeof Chart:", typeof Chart,
+                    "Chart.adapters:", Chart && typeof Chart.adapters !== 'undefined' ? JSON.stringify(Chart.adapters) : (Chart ? 'Chart.adapters is undefined' : 'Chart is undefined'),
+                    "typeof Moment:", typeof Moment);
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("TEST PAGE - DOMContentLoaded");
+            const ctx = document.getElementById('myTestChart');
+            if (!ctx) {
+                console.error("TEST PAGE - Canvas 'myTestChart' not found!");
+                return;
+            }
+
+            if (typeof Chart === 'undefined') {
+                console.error("TEST PAGE - Chart is undefined! Cannot create chart.");
+                alert("Chart.js core no está cargado.");
+                return;
+            }
+            // Verificamos Moment y el adaptador de Chart.js
+            if (typeof Moment === 'undefined' || typeof Chart.adapters === 'undefined' || typeof Chart.adapters._date === 'undefined') {
+                console.error("TEST PAGE - Moment.js or Chart.js date adapter not loaded!");
+                console.error("TEST PAGE - typeof Moment:", typeof Moment);
+                console.error("TEST PAGE - typeof Chart.adapters:", typeof Chart.adapters);
+                if (Chart.adapters) {
+                    console.error("TEST PAGE - typeof Chart.adapters._date:", typeof Chart.adapters._date);
+                }
+                alert("Moment.js o el adaptador de fechas de Chart.js no se cargó correctamente. Revisa la consola.");
+                const context = ctx.getContext('2d');
+                context.clearRect(0, 0, ctx.width, ctx.height);
+                context.font = "16px Arial";
+                context.textAlign = "center";
+                context.fillStyle = "red";
+                context.fillText("Error: Adaptador de fechas (Moment.js) no cargado.", ctx.width / 2, ctx.height / 2);
+                return;
+            }
+
+            console.log("TEST PAGE - Todo parece estar cargado (Moment.js). Intentando crear gráfico...");
+            try {
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        // Moment.js puede manejar objetos Date directamente o strings que pueda parsear
+                        labels: [new Date(2023, 0, 1), new Date(2023, 0, 2), new Date(2023, 0, 3)],
+                        datasets: [{
+                            label: 'Test Dataset (Moment.js)',
+                            data: [10, 20, 15],
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'day'
+                                    // No necesitas displayFormats aquí si Moment.js lo maneja bien por defecto
+                                }
+                            },
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+                console.log("TEST PAGE - Gráfico con Moment.js creado exitosamente!");
+                alert("¡El gráfico de prueba con adaptador Moment.js debería funcionar! Si ves esto y el gráfico, el problema con date-fns podría ser específico de esa librería o su inicialización.");
+            } catch (error) {
+                console.error("TEST PAGE - Error al crear el gráfico con Moment.js:", error);
+                alert("Error al crear el gráfico de prueba con Moment.js: " + error.message);
+            }
+        });
+    </script>
+</body>
+</html>

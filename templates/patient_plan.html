@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Mi Plan de Alimentación - {{ patient.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Plan de Alimentación para {{ patient.name }} {{ patient.surname }}</h2>
+    <p>Fecha de la Evaluación: {{ evaluation.consultation_date.strftime('%d/%m/%Y') }}</p>
+    <hr>
+
+    <ul class="nav nav-tabs mb-3" id="planTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="plan-semanal-tab" data-bs-toggle="tab" data-bs-target="#plan-semanal" type="button" role="tab" aria-controls="plan-semanal" aria-selected="true">Plan Semanal</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="recetas-tab" data-bs-toggle="tab" data-bs-target="#recetas" type="button" role="tab" aria-controls="recetas" aria-selected="false">Recetas</button>
+        </li>
+        <li class="nav-item" role="presentation">
+             <a class="nav-link" href="{{ url_for('patient_shopping_list', patient_id=patient.id, evaluation_id=evaluation.id) }}">Lista de Compras</a>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="planTabsContent">
+        <div class="tab-pane fade show active" id="plan-semanal" role="tabpanel" aria-labelledby="plan-semanal-tab">
+            <h4>Plan Semanal</h4>
+            <div class="card">
+                <div class="card-body">
+                    <pre style="white-space: pre-wrap; word-wrap: break-word;">{{ plan_structure_text if plan_structure_text else 'Plan no disponible.' }}</pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="recetas" role="tabpanel" aria-labelledby="recetas-tab">
+            <h4>Recetas del Plan</h4>
+            {% if parsed_recipes %}
+                <div class="list-group">
+                    {% for recipe in parsed_recipes %}
+                        {# recipe.number debería ser algo como "N°1" #}
+                        <a href="{{ url_for('patient_recipe_detail', patient_id=patient.id, evaluation_id=evaluation.id, recipe_identifier=recipe.number) }}" class="list-group-item list-group-item-action">
+                            {{ recipe.number }}: {{ recipe.name }}
+                        </a>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p>No hay recetas detalladas asociadas a este plan.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <hr class="my-4">
+    <a href="{{ url_for('patient_dashboard', patient_id=patient.id) }}" class="btn btn-secondary">Volver al Dashboard</a>
+</div>
+{% endblock %}

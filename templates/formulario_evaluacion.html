@@ -1,6 +1,49 @@
 {% extends 'base.html' %}
 {% block title %}NutriApp - Formulario de Evaluación{% endblock %}
 
+{% block styles %}
+{{ super() }}
+<!-- Estilos específicos para ESTA página, incluyendo los del modal -->
+<link href="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.css" rel="stylesheet" type="text/css" />
+<style>
+    /* ... (tus estilos existentes para formulario_evaluacion.html) ... */
+    .tagify-container { /* Estilo para Tagify si lo usas directamente aquí */
+        border: 1px solid #ced4da;
+        border-radius: .25rem;
+        padding: .375rem .75rem;
+    }
+    .reference-text {
+        font-size: 0.8rem;
+        color: #6c757d;
+        margin-top: 0.25rem;
+    }
+    .checkbox-group .form-check {
+        margin-bottom: 0.5rem; /* Espacio entre checkboxes */
+    }
+
+    /* Estilos para el contenido del modal de resumen */
+    #planSummaryContent h5 {
+        color: #003366; /* Un color distintivo para los títulos de sección */
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 0.3rem;
+    }
+    #planSummaryContent p {
+        margin-bottom: 0.4rem;
+        font-size: 0.9rem;
+    }
+    #planSummaryContent strong {
+        color: #333;
+    }
+    /* Estilos para el spinner de carga del plan */
+    #loading-spinner-plan {
+        display: none; /* Oculto por defecto */
+        /* ... (otros estilos que puedas tener para el spinner) ... */
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-3 mb-5">
 
@@ -19,7 +62,9 @@
   <form id="patient-plan-form">
     <input type="hidden" id="patient_id" name="patient_id">
     <input type="hidden" id="loaded_evaluation_id" name="loaded_evaluation_id">
-    <input type="hidden" id="form_action" name="form_action" value="{{ action | default('new_evaluation_new_patient') }}">
+    <input type="hidden" id="imc_references_json" name="imc_references_json">
+    <input type="hidden" id="whr_references_json" name="whr_references_json">
+    <input type="hidden" id="whtr_references_json" name="whtr_references_json">
  
     <!-- I. Identificación y Datos Filiatorios -->
     <div class="card shadow-sm mb-4">
@@ -239,12 +284,26 @@
             <div class="col-md-3"><label for="mic_chol" class="form-label">Colesterol (mg):</label><input type="number" step="1" min="0" max="1000" id="mic_chol" name="mic_chol" class="form-control form-control-sm" placeholder="300"></div>
           </div>
           <hr class="my-3">
-          <div class="mb-3"><label for="base_foods" class="form-label">Alimentos Base (Enter o coma):</label><input type="text" id="base_foods" name="base_foods" class="form-control form-control-sm" placeholder="arroz, pollo"></div>
+          <!-- Reemplazo del campo Alimentos Base -->
+          <div class="mb-3">
+            <label class="form-label">Alimentos Base Sugeridos (para incluir en el plan):</label>
+            <div id="base-foods-container">
+              <!-- Los selectores de alimentos base se añadirán aquí -->
+            </div>
+            <button type="button" id="btn-add-base-food" class="btn btn-outline-success btn-sm mt-2"><i class="fas fa-plus"></i> Añadir Alimento Base</button>
+          </div>
         </fieldset>
       </div>
     </div>
  
-    <div class="text-center my-4"><button type="button" class="btn btn-primary btn-lg" id="btn-generar-plan"><i class="fas fa-cogs"></i> Generar Plan con IA</button></div>
+    <div class="text-center my-4">
+        <button type="button" class="btn btn-primary btn-lg" id="btn-generar-plan">
+            <i class="fas fa-cogs"></i> Generar Plan con IA
+        </button>
+        <div id="loading-spinner-plan" class="spinner-border text-primary ms-2" role="status" style="display: none;">
+            <span class="visually-hidden">Generando...</span>
+        </div>
+    </div>
   </form>
 
   <div id="plan-display-section" class="card mt-4 shadow-sm" style="display:none;">
@@ -254,441 +313,58 @@
         <label for="planTextArea" class="form-label">Contenido del Plan (Editable):</label>
         <textarea id="planTextArea" name="planTextArea" rows="15" class="form-control"></textarea>
       </div>
-      <!-- Nuevo DIV para mostrar el plan con botones de favorito -->
-      <div class="mb-3">
-        <label class="form-label">Vista del Plan con Opciones:</label>
-        <div id="plan-display-con-favoritos" class="p-3 border rounded bg-light" style="white-space: pre-wrap; font-family: monospace; min-height: 200px;">
-            <!-- El contenido se generará con JavaScript -->
+
+      <!-- Container for favorite recipes selection (populated by main.js) -->
+      <div id="favorite-recipes-selection-container" style="display:none;" class="mt-3 mb-3 card">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0"><i class="fas fa-star"></i> Seleccionar Recetas Favoritas del Plan Generado</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small">Marca las recetas de este plan que deseas guardar en "Mis Preparaciones" para uso futuro.</p>
+            <div id="favoriteRecipesContainer" class="p-2 border rounded" style="max-height: 250px; overflow-y: auto;">
+                <p class="text-muted">Las recetas para seleccionar aparecerán aquí después de generar el plan.</p>
+            </div>
         </div>
       </div>
+      <!-- End of favorite recipes selection container -->
       <div class="mb-3"><label for="user_observations" class="form-label">Observaciones Adicionales (PDF):</label><textarea id="user_observations" name="user_observations" rows="5" class="form-control"></textarea></div>
       <div class="d-grid gap-2 d-md-flex justify-content-md-center">
-        <button type="button" class="btn btn-success btn-lg me-md-2" onclick="finalizar()"><i class="fas fa-save"></i> Guardar NUEVA Evaluación y Archivos</button>
-        <button type="button" id="viewTechnicalPdfButton" class="btn btn-info btn-lg" style="display: none;" onclick="verPdfTecnico()"><i class="fas fa-file-medical-alt"></i> Ver Ficha Técnica (PDF)</button>
-        <button type="button" id="viewPatientPdfButton" class="btn btn-light btn-lg border" style="display: none;" onclick="verPdfPaciente()"><i class="fas fa-user-graduate"></i> Ver Plan para Paciente (PDF)</button>
-        <button type="button" id="sendEmailToPatientButton" class="btn btn-warning btn-lg" style="display: none;"><i class="fas fa-envelope"></i> Enviar Plan por Email</button>
-      </div>
+        <button type="button" id="btn-finalizar" class="btn btn-success btn-lg me-md-2"><i class="fas fa-save"></i> Guardar Evaluación y Archivos</button>
+        <button type="button" id="viewTechnicalPdfButton" class="btn btn-info btn-lg" style="display: none;"><i class="fas fa-file-medical-alt"></i> Ver Ficha Técnica (PDF)</button>
+        <button type="button" id="viewPatientPdfButton" class="btn btn-light btn-lg border" style="display: none;"><i class="fas fa-user-graduate"></i> Ver Plan para Paciente (PDF)</button>
+        <button type="button" id="sendEmailToPatientButton" class="btn btn-warning btn-lg" style="display: none;"><i class="fas fa-envelope"></i> Enviar Plan</button>      </div>
       <div id="final-message" class="mt-3 alert" style="display: none;"></div>
     </div>
   </div>
+
+    <!-- Modal de Resumen del Plan -->
+    <div class="modal fade" id="planSummaryModal" tabindex="-1" aria-labelledby="planSummaryModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="planSummaryModalLabel">Revisar Datos Antes de Generar Plan</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="planSummaryContent">
+                    <p>Cargando resumen...</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Modificar Datos</button>
+                    <button type="button" class="btn btn-primary" id="confirmAndGeneratePlanBtn">Confirmar y Generar Plan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Fin del Modal de Resumen del Plan -->
 </div>
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log("Formulario de Evaluación: DOMContentLoaded disparado."); 
-        
-        const serverContextAction = {{ action | default(None) | tojson | safe }};
-        let serverContextEvaluationData = {{ evaluation_data_to_load | tojson | safe }}; // Should be null if not 'edit_evaluation'
-        
-        console.log("Initial serverContextAction:", serverContextAction);
-        console.log("Initial serverContextEvaluationData (from Jinja):", JSON.stringify(serverContextEvaluationData));
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const actionFromUrl = urlParams.get('action');
-        const patientIdToLoadFromUrl = urlParams.get('patient_id');
-        const evaluationIdToLoadFromUrl = urlParams.get('load_evaluation_id');
-        
-        let currentAction = actionFromUrl || serverContextAction || 'new_evaluation_new_patient';
-        let isEditMode = false;
-
-        const loadedEvaluationIdDisplay = document.getElementById('loaded_evaluation_id_display');
-        const saveButton = document.querySelector('button[onclick="finalizar()"]');
-        const formActionInput = document.getElementById('form_action');
-        const planTextArea = document.getElementById('planTextArea'); 
-        const planDisplayConFavoritosDiv = document.getElementById('plan-display-con-favoritos');
-        const btnGenerarPlan = document.getElementById('btn-generar-plan');
-        const sendEmailButton = document.getElementById('sendEmailToPatientButton');
-        const viewPatientPdfBtn = document.getElementById('viewPatientPdfButton');
-        
-        let currentFullPlanText = "";
-        const tagifyFieldNames = ['allergies', 'intolerances', 'preferences', 'aversions', 'base_foods'];
-
-        console.log("Formulario de Evaluación: Tagify initialization is expected from main.js (window.tagifyInstances).");
-
-        function clearPreloadForm(clearPatientData = true) {
-            console.log("Formulario de Evaluación: clearPreloadForm. Clear patient data:", clearPatientData);
-            const evaluationFieldsIds = [
-                'weight_at_plan', 'wrist_circumference_cm', 'waist_circumference_cm', 'hip_circumference_cm',
-                'gestational_age_weeks', 'activity_factor', 'other_pathologies_text', 'postoperative_text',
-                'diet_type', 'other_diet_type_text', 'target_weight', 'target_waist_cm',
-                'target_protein_perc', 'target_carb_perc', 'target_fat_perc',
-                'planTextArea', 'user_observations',
-                'mic_k', 'mic_ca', 'mic_na', 'mic_chol'
-            ];
-            evaluationFieldsIds.forEach(id => {
-                const field = document.getElementById(id);
-                if (field) { field.type === 'checkbox' || field.type === 'radio' ? field.checked = false : field.value = ''; }
-            });
-            document.querySelectorAll('input[name="pathologies"]').forEach(chk => { chk.checked = false; });
-            
-            tagifyFieldNames.forEach(fieldName => {
-                if (window.tagifyInstances && window.tagifyInstances[fieldName] && typeof window.tagifyInstances[fieldName].removeAllTags === 'function') {
-                    window.tagifyInstances[fieldName].removeAllTags();
-                }
-            });
-
-            if (clearPatientData) {
-                const patientFieldsIds = [
-                    'patient_id', 'name', 'surname', 'cedula', 'email', 'phone_number',
-                    'education_level', 'purchasing_power', 'dob', 'sex', 'height_cm'
-                ];
-                patientFieldsIds.forEach(id => {
-                    const field = document.getElementById(id);
-                    if (field) { field.type === 'checkbox' || field.type === 'radio' ? field.checked = false : field.value = ''; }
-                });
-            }
-            const calculatedFields = ['calculated-get', 'calculated-complexion', 'calculated-ideal-weight', 'calculated-imc', 'calculated-whr', 'calculated-whtr'];
-            calculatedFields.forEach(id => { const el = document.getElementById(id); if(el) { el.textContent = id.includes('weight') ? '-- kg' : '--'; } });
-            const rangeFields = ['imc-ranges', 'whr-ranges', 'whtr-ranges'];
-            rangeFields.forEach(id => { const el = document.getElementById(id); if(el) { el.innerHTML = ''; } });
-            
-            if (planTextArea) { planTextArea.value = ''; }
-            if (document.getElementById('user_observations')) { document.getElementById('user_observations').value = ''; }
-            if (planDisplayConFavoritosDiv) { planDisplayConFavoritosDiv.innerHTML = "<p>El plan aparecerá aquí con opciones.</p>"; }
-            currentFullPlanText = "";
-            if (typeof currentPlanDataBaseData !== 'undefined') { currentPlanDataBaseData = null; }
-            
-            const hiddenFields = ['loaded_evaluation_id'];
-            hiddenFields.forEach(id => { const el = document.getElementById(id); if(el) { el.value = ''; } });
-            if(loadedEvaluationIdDisplay) { loadedEvaluationIdDisplay.textContent = ''; }
-            if(document.getElementById('plan-display-section')) { document.getElementById('plan-display-section').style.display = 'none'; }
-        }
-
-        function populateTagifyFieldWhenReady(fieldName, dataArray) {
-            if (!Array.isArray(dataArray)) {
-                console.warn(`populateTagifyFieldWhenReady: dataArray for ${fieldName} is not an array. Received:`, dataArray);
-                dataArray = []; 
-            }
-            
-            const stringDataArray = dataArray.map(item => String(item || '').trim()).filter(item => item);
-
-            if (window.tagifyInstances && window.tagifyInstances[fieldName]) {
-                const tagifyInstance = window.tagifyInstances[fieldName];
-                tagifyInstance.removeAllTags();
-                if (stringDataArray.length > 0) {
-                    tagifyInstance.addTags(stringDataArray);
-                }
-                console.log(`Populate (direct): Tagify field '${fieldName}' updated with tags:`, JSON.stringify(stringDataArray));
-            } else {
-                const inputElement = document.getElementById(fieldName);
-                if (inputElement) {
-                    inputElement.value = stringDataArray.join(',');
-                    console.warn(`Populate (fallback): Tagify instance for '${fieldName}' not ready. Set input.value to:`, inputElement.value);
-                }
-                setTimeout(() => {
-                    if (window.tagifyInstances && window.tagifyInstances[fieldName]) {
-                        const tagifyInstanceRetry = window.tagifyInstances[fieldName];
-                        tagifyInstanceRetry.removeAllTags();
-                         if (stringDataArray.length > 0) {
-                            tagifyInstanceRetry.addTags(stringDataArray);
-                        }
-                        console.log(`Populate (retry): Tagify field '${fieldName}' updated with tags:`, JSON.stringify(stringDataArray));
-                    } else {
-                        console.error(`Populate (retry failed): Tagify instance for '${fieldName}' still not available.`);
-                    }
-                }, 1000); 
-            }
-        }
-
-        function populatePreloadForm(data, isFullEvaluationLoad) {
-            console.log("Formulario de Evaluación: populatePreloadForm. Full load:", isFullEvaluationLoad, "Data:", JSON.stringify(data, null, 2));
-            if (!data || typeof data !== 'object') {
-                console.error("populatePreloadForm: No data provided or data is not an object.");
-                return;
-            }
-
-            function setValue(id, value, isDate = false) {
-                const el = document.getElementById(id);
-                if (el) {
-                    let finalValue = value !== null && value !== undefined ? String(value) : '';
-                    if (isDate && finalValue) {
-                        if (finalValue.includes('T')) {
-                            finalValue = finalValue.split('T')[0];
-                        }
-                    }
-                    el.value = finalValue;
-                }
-            }
-
-            setValue('patient_id', data.patient_id || data.id);
-            setValue('name', data.name);
-            setValue('surname', data.surname);
-            setValue('cedula', data.cedula);
-            setValue('email', data.email);
-            setValue('phone_number', data.phone_number);
-            setValue('education_level', data.education_level);
-            setValue('purchasing_power', data.purchasing_power);
-            setValue('dob', data.dob, true); 
-            setValue('sex', data.sex);
-            setValue('height_cm', data.height_cm);
-            
-            tagifyFieldNames.forEach(fieldName => {
-                let tagValues = data[fieldName]; 
-                if (typeof tagValues === 'string' && tagValues.trim() !== '') {
-                    tagValues = tagValues.split(',').map(s => s.trim()).filter(s => s);
-                } else if (!Array.isArray(tagValues)) {
-                    tagValues = [];
-                }
-                populateTagifyFieldWhenReady(fieldName, tagValues);
-            });
-
-            if (isFullEvaluationLoad) {
-                setValue('loaded_evaluation_id', data.evaluation_id);
-                if(loadedEvaluationIdDisplay && data.evaluation_id) { loadedEvaluationIdDisplay.textContent = `Cargando datos desde Evaluación ID: ${data.evaluation_id} como base para una NUEVA evaluación.`; }
-                
-                setValue('weight_at_plan', data.weight_at_eval || data.weight_at_plan);
-                setValue('wrist_circumference_cm', data.wrist_circumference_cm);
-                setValue('waist_circumference_cm', data.waist_circumference_cm);
-                setValue('hip_circumference_cm', data.hip_circumference_cm);
-                setValue('gestational_age_weeks', data.gestational_age_weeks !== null ? data.gestational_age_weeks : '0');
-                setValue('activity_factor', data.activity_factor || '1.2');
-                
-                const pathologiesFromServer = data.pathologies || [];
-                document.querySelectorAll('input[name="pathologies"]').forEach(checkbox => {
-                    checkbox.checked = pathologiesFromServer.includes(checkbox.value);
-                });
-                setValue('other_pathologies_text', data.other_pathologies_text);
-                setValue('postoperative_text', data.postoperative_text);
-                setValue('diet_type', data.diet_type);
-                setValue('other_diet_type_text', data.other_diet_type_text);
-                setValue('target_weight', data.target_weight);
-                setValue('target_waist_cm', data.target_waist_cm);
-                setValue('target_protein_perc', data.target_protein_perc);
-                setValue('target_carb_perc', data.target_carb_perc);
-                setValue('target_fat_perc', data.target_fat_perc);
-                
-                const micronutrients = data.micronutrients || {}; 
-                setValue('mic_k', micronutrients.potassium_mg);
-                setValue('mic_ca', micronutrients.calcium_mg);
-                setValue('mic_na', micronutrients.sodium_mg);
-                setValue('mic_chol', micronutrients.cholesterol_mg);
-
-                if (planTextArea) {
-                    planTextArea.value = data.edited_plan_text || "";
-                    if (data.edited_plan_text) {
-                        currentFullPlanText = data.edited_plan_text; 
-                        displayPlanWithFavoriteButtons(currentFullPlanText); 
-                    }
-                }
-                setValue('user_observations', data.user_observations);
-                
-                if (typeof currentPlanDataBaseData !== 'undefined') {
-                     currentPlanDataBaseData = data; 
-                     console.log("Populate (Full Load): currentPlanDataBaseData set:", JSON.stringify(currentPlanDataBaseData, null, 2).substring(0, 200) + "...");
-                }
-                if(document.getElementById('plan-display-section')) { document.getElementById('plan-display-section').style.display = (data.edited_plan_text ? 'block' : 'none'); }
-            } else { 
-                 if(loadedEvaluationIdDisplay && data.id) { loadedEvaluationIdDisplay.textContent = `Creando nueva evaluación para Paciente ID: ${data.id}.`; }
-                 // Ensure sex is cleared if not loading a full evaluation
-                 setValue('sex', '');
-                 if (typeof currentPlanDataBaseData !== 'undefined') {
-                    currentPlanDataBaseData = null; 
-                    console.log("Populate (Patient Only): currentPlanDataBaseData reset to null.");
-                 }
-                 if(document.getElementById('plan-display-section')) { document.getElementById('plan-display-section').style.display = 'none'; }
-            }
-            
-            console.log("Formulario de Evaluación: Value of sex field after populatePreloadForm:", document.getElementById('sex').value);
-
-            const heightVal = document.getElementById('height_cm').value;
-            const weightVal = document.getElementById('weight_at_plan').value;
-            const dobVal = document.getElementById('dob').value;
-            const sexVal = document.getElementById('sex').value;
-            const activityFactorVal = document.getElementById('activity_factor').value;
-
-            if (heightVal && weightVal && dobVal && sexVal && activityFactorVal) {
-                if(typeof calcularValores === "function") {
-                    console.log("Calling calcularValores() from populatePreloadForm");
-                    calcularValores();
-                } else {
-                    console.warn("calcularValores function not found.");
-                }
-            } else {
-                console.log("Not calling calcularValores from populatePreloadForm, missing data:", {heightVal, weightVal, dobVal, sexVal, activityFactorVal});
-            }
-        }
-
-        if (formActionInput) {
-            formActionInput.value = currentAction;
-            console.log("Form action set to:", formActionInput.value);
-        }
-        
-        clearPreloadForm(true); 
-
-        if (currentAction === 'edit_evaluation' && serverContextEvaluationData) {
-            console.log("Formulario de Evaluación: Modo EDICIÓN con datos del servidor.");
-            isEditMode = true;
-            populatePreloadForm(serverContextEvaluationData, true); 
-            if(loadedEvaluationIdDisplay && serverContextEvaluationData.evaluation_id) {
-                loadedEvaluationIdDisplay.textContent = `Editando Evaluación ID: ${serverContextEvaluationData.evaluation_id}.`;
-            }
-            if (saveButton) { saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cambios en Evaluación'; }
-        } else if (currentAction === 'new_eval_for_patient' && patientIdToLoadFromUrl) {
-            console.log("Formulario de Evaluación: Acción new_eval_for_patient. Patient ID:", patientIdToLoadFromUrl);
-            fetch(`/get_patient_details/${patientIdToLoadFromUrl}`)
-                .then(response => {
-                    if (!response.ok) { throw new Error(`HTTP error! status: ${response.status}, message: ${response.statusText}`); }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log("Datos del paciente recibidos para new_eval_for_patient:", data);
-                    populatePreloadForm(data, false); 
-                    if(loadedEvaluationIdDisplay) { loadedEvaluationIdDisplay.textContent = `Creando nueva evaluación para Paciente ID: ${patientIdToLoadFromUrl}.`; }
-                })
-                .catch(error => console.error('Error al cargar datos del paciente para new_eval_for_patient:', error));
-        } else if (currentAction === 'load_eval_for_new' && evaluationIdToLoadFromUrl) {
-            console.log("Formulario de Evaluación: Acción load_eval_for_new. Evaluation ID:", evaluationIdToLoadFromUrl);
-            fetch(`/get_evaluation_data/${evaluationIdToLoadFromUrl}`)
-                .then(response => {
-                    if (!response.ok) { throw new Error(`HTTP error! status: ${response.status}, message: ${response.statusText}`); }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log("Datos de evaluación recibidos para load_eval_for_new:", data);
-                    populatePreloadForm(data, true); 
-                    if(loadedEvaluationIdDisplay && data.evaluation_id) { loadedEvaluationIdDisplay.textContent = `Cargando datos desde Evaluación ID: ${data.evaluation_id} como base para una NUEVA evaluación.`; }
-                })
-                .catch(error => console.error('Error al cargar datos de la evaluación para load_eval_for_new:', error));
-        } else { 
-            console.log("Formulario de Evaluación: Modo NUEVO PACIENTE / NUEVA EVALUACIÓN (default).");
-            if(loadedEvaluationIdDisplay) { loadedEvaluationIdDisplay.textContent = 'Creando nueva evaluación para un nuevo paciente.'; }
-        }
-
-        if (actionFromUrl || patientIdToLoadFromUrl || evaluationIdToLoadFromUrl) {
-            if (!(currentAction === 'edit_evaluation' && serverContextAction === 'edit_evaluation')) {
-                history.replaceState(null, '', window.location.pathname);
-            }
-        }
-
-        if (planTextArea) {
-            planTextArea.addEventListener('input', function() {
-                if (this.value !== currentFullPlanText) {
-                    displayPlanWithFavoriteButtons(this.value);
-                }
-            });
-        }
-
-        // --- SECCIÓN COMENTADA PARA DIAGNÓSTICO ---
-        /*
-        // La visibilidad del botón sendEmailToPatientButton ahora dependerá de que
-        // main.js (función finalizar) lo haga visible después de guardar la evaluación
-        // y establecer window.lastSavedEvaluationId.
-        // Si se necesita una lógica más robusta aquí (como el MutationObserver),
-        // se puede reintroducir con cuidado, asegurándose de que no cause errores de sintaxis.
-
-    }); // Fin DOMContentLoaded
-    */ // Fin del comentario de la sección
-
-    }); // Fin DOMContentLoaded
-
-    function escapeHtml(text) {
-        if (text === null || text === undefined) { return ""; }
-        const map = {
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
-        };
-        return String(text).replace(/[&<>"']/g, function(m) { return map[m]; }); 
-    }
-
-    function displayPlanWithFavoriteButtons(planText) {
-        const planDisplayDiv = document.getElementById('plan-display-con-favoritos');
-        if (!planDisplayDiv) {
-            console.error("Elemento 'plan-display-con-favoritos' no encontrado.");
-            return;
-        }
-        // currentFullPlanText is a global-like variable within the outer DOMContentLoaded scope
-        currentFullPlanText = planText || ""; 
-        if (!planText) {
-            planDisplayDiv.innerHTML = "<p class='text-center p-3 text-muted'>No hay plan para mostrar o está vacío.</p>";
-            return;
-        }
-        let processedHtml = "";
-        const lines = planText.split('\n');
-        lines.forEach(line => {
-            const trimmedLine = line.trim();
-            const matchResult = trimmedLine.match(/^Receta N°\d+:\s*(.*)$/i); 
-            if (matchResult && matchResult[1]) {
-                const recipeName = matchResult[1].trim(); 
-                processedHtml += `<div class="d-flex justify-content-between align-items-center py-1 border-bottom">
-                                    <strong class="me-2">${escapeHtml(line)}</strong>
-                                    <button class="btn btn-sm btn-outline-warning favorite-recipe-btn flex-shrink-0" data-recipe-name="${escapeHtml(recipeName)}">
-                                        <i class="fas fa-star"></i> Favorita
-                                    </button>
-                                  </div>`;
-            } else {
-                processedHtml += `<p class="mb-1">${escapeHtml(line)}</p>`;
-            }
-        });
-        planDisplayDiv.innerHTML = processedHtml || "<p class='text-center p-3 text-muted'>Plan procesado. No se detectaron recetas con el formato esperado para añadir botones.</p>";
-        document.querySelectorAll('.favorite-recipe-btn').forEach(button => {
-            button.removeEventListener('click', handleFavoriteRecipeClick); 
-            button.addEventListener('click', handleFavoriteRecipeClick);
-        });
-    }
-
-    async function handleFavoriteRecipeClick(event) {
-        const button = event.target.closest('button'); 
-        if (!button) { return; }
-        const recipeName = button.dataset.recipeName;
-        // currentFullPlanText is a global-like variable within the outer DOMContentLoaded scope
-        if (!recipeName || !currentFullPlanText) { 
-            alert("Error: No se pudo obtener la información de la receta o el plan completo. Asegúrate de que el plan se haya generado.");
-            return;
-        }
-        button.disabled = true;
-        button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Guardando...';
-        try {
-            const response = await fetch('/api/favorite_generated_preparation', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ recipe_name: recipeName, full_plan_text: currentFullPlanText }),
-            });
-            const result = await response.json();
-            if (response.ok) {
-                alert(`"${recipeName}" guardada como preparación favorita (ID: ${result.id}).`);
-                button.innerHTML = '<i class="fas fa-check"></i> Guardada';
-                button.classList.remove('btn-outline-warning');
-                button.classList.add('btn-success');
-            } else {
-                alert(`Error al guardar: ${result.error || 'No se pudo guardar la preparación como favorita.'}`);
-                button.innerHTML = '<i class="fas fa-star"></i> Favorita'; 
-                button.disabled = false;
-            }
-        } catch (error) {
-            console.error('Error de red o del cliente al guardar preparación favorita:', error);
-            alert('Error de red al intentar guardar la preparación como favorita.');
-            button.innerHTML = '<i class="fas fa-star"></i> Favorita'; 
-            button.disabled = false;
-        }
-    }
-
-    window.verPdfTecnico = function() {
-        let evaluationId = null;
-        if (window.lastSavedEvaluationId) {
-            evaluationId = window.lastSavedEvaluationId;
-        } else {
-            const loadedEvalIdInput = document.getElementById('loaded_evaluation_id');
-            if (loadedEvalIdInput && loadedEvalIdInput.value) {
-                 evaluationId = loadedEvalIdInput.value;
-            }
-        }
-        if (evaluationId) {
-            window.open(`/ver_pdf/${evaluationId}`, '_blank');
-        } else {
-            alert("No hay una evaluación guardada o cargada para generar el PDF técnico.");
-        }
-    }
-    
-    window.verPdfPaciente = function() {
-        const evaluationId = window.lastSavedEvaluationId; 
-        if (evaluationId) {
-            window.open(`/ver_pdf_paciente/${evaluationId}`, '_blank');
-        } else {
-            alert("No hay una evaluación guardada recientemente para generar el PDF del paciente.");
-        }
-    }
-
+    // Inyectar los datos de los ingredientes desde el backend para que el JS los use
+    window.allIngredientsData = {{ all_ingredients | tojson | safe }};
+    window.serverContextAction = {{ action | default(None) | tojson | safe }};
+    window.serverContextEvaluationData = {{ evaluation_data_to_load | tojson | safe }};
 </script>
 {% endblock %}

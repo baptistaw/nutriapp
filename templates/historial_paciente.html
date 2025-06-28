@@ -72,6 +72,9 @@
                 <button type="button" class="btn btn-info btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#graficosModal">
                     <i class="fas fa-chart-area"></i> Ver Gráficos de Evolución
                 </button>
+                <a href="{{ url_for('nutricionista_chat_view', patient_id=patient.id) }}" class="btn btn-success btn-sm mt-2">
+                    <i class="fas fa-comments"></i> Chatear con Paciente
+                </a>
                 {% endif %}
             </div>
         </div>

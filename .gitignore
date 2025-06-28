@@ -13,6 +13,7 @@ __pycache__/
 instance/
 credentials.json
 token.json
+firebase-adminsdk.json
 
 # Bases de datos SQLite
 *.db

@@ -1,601 +1,689 @@
-/**
- * Obtiene el valor numérico de un elemento del DOM por su ID.
- * @param {string} id - El ID del elemento.
- * @returns {number|null} El valor numérico o null si está vacío, no se encuentra el elemento o no es un número.
- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+// --- Firebase Initialization ---
+console.log("Firebase Config loaded:", window.firebaseConfig);
+const app = initializeApp(window.firebaseConfig);
+const auth = getAuth(app);
+
+// --- Globals ---
+let lastCalculatedReferences = {};
+let currentPlanDataBaseData = null;
+
+// --- Helper to check if it's a patient app route ---
+function isPatientAppRoute(pathname) {
+    return pathname.startsWith('/patient_app/');
+}
+
+// --- Core Authentication Handler ---
+// This is the single source of truth for handling authentication state changes.
+async function handleAuthStateChange(user) {
+  // Get UI elements
+  const loginLink = document.getElementById('login-link');
+  const registerLink = document.getElementById('register-link');
+  const profileLink = document.getElementById('profile-link');
+  const logoutLink = document.getElementById('logout-link');
+
+  // Get current path info
+  const currentPath = window.location.pathname;
+  const isNutritionistAuthPage = currentPath.includes('/login') || currentPath.includes('/register');
+  const isPatientRoute = isPatientAppRoute(currentPath);
+
+  if (user) { // User is authenticated with Firebase
+    console.log("AUTH_STATE: Usuario logueado en Firebase:", user.uid);
+
+    // Store token for API calls
+    try {
+      const idToken = await user.getIdToken(true); // Force refresh
+      localStorage.setItem('authToken', idToken);
+      console.log("AUTH_STATE: Firebase ID Token stored in localStorage.");
+    } catch (error) {
+      console.error("Error getting Firebase ID Token:", error);
+      localStorage.removeItem('authToken');
+    }
+
+    // --- Logic for Nutritionist App ---
+    if (!isPatientRoute) {
+        // Hide/show appropriate links for nutritionist
+        if (loginLink) loginLink.style.display = 'none';
+        if (registerLink) registerLink.style.display = 'none';
+        if (profileLink) profileLink.style.display = 'block';
+        if (logoutLink) logoutLink.style.display = 'block';
+
+        // FIX for redirect loop: If on a nutritionist auth page but logged into Firebase,
+        // we need to log into the backend to create the Flask-Login session.
+        if (isNutritionistAuthPage) {
+            if (sessionStorage.getItem('autologin_attempted')) {
+                console.error("LOOP DETECTADO Y DETENIDO: El inicio de sesión automático falló. Mostrando formulario manual.");
+                const errorDiv = document.getElementById('login-error-message');
+                if(errorDiv) {
+                    errorDiv.textContent = "El inicio de sesión automático falló. Por favor, ingrese sus credenciales manualmente.";
+                    errorDiv.classList.remove('d-none');
+                }
+            } else {
+                sessionStorage.setItem('autologin_attempted', 'true');
+                console.log("AUTH_STATE_CHANGE_DEBUG: Firebase user detected on nutritionist auth page. Attempting to log into backend automatically.");
+                try {
+                    const idToken = await user.getIdToken();
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    const nextUrl = new URLSearchParams(window.location.search).get('next');
+                    form.action = nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : '/login';
+                    const csrfToken = getCsrfToken();
+                    if (csrfToken) {
+                        const csrfInput = document.createElement('input');
+                        csrfInput.type = 'hidden';
+                        csrfInput.name = 'csrf_token';
+                        csrfInput.value = csrfToken;
+                        form.appendChild(csrfInput);
+                    }
+                    const tokenInput = document.createElement('input');
+                    tokenInput.type = 'hidden';
+                    tokenInput.name = 'idToken';
+                    tokenInput.value = idToken;
+                    form.appendChild(tokenInput);
+                    document.body.appendChild(form);
+                    form.submit();
+                } catch (error) {
+                    console.error("Error during automatic backend login:", error);
+                    sessionStorage.removeItem('autologin_attempted'); // Allow retry on error
+                }
+            }
+            return; // Stop further execution
+        }
+        
+        // If on a protected nutritionist page, run page-specific logic
+        if (currentPath.includes('/pacientes_dashboard')) {
+            loadAllPatients();
+            updateWelcomeMessage();
+        } else if (currentPath.includes('/profile')) {
+            loadUserProfile();
+        }
+        
+        // If we successfully navigated away from the login page, clear the flag.
+        sessionStorage.removeItem('autologin_attempted');
+    }
+    // --- End of Logic for Nutritionist App ---
+
+  } else { // User is NOT authenticated with Firebase
+    console.log("AUTH_STATE: Usuario no logueado en Firebase.");
+    localStorage.removeItem('authToken');
+    console.log("AUTH_STATE: Firebase ID Token removed from localStorage.");
+
+    // --- Logic for Nutritionist App ---
+    if (!isPatientRoute) {
+        if (loginLink) loginLink.style.display = 'block';
+        if (registerLink) registerLink.style.display = 'block';
+        if (profileLink) profileLink.style.display = 'none';
+        if (logoutLink) logoutLink.style.display = 'none';
+    }
+    // --- End of Logic for Nutritionist App ---
+
+    // --- Logic for Patient App ---
+    if (isPatientRoute) {
+        console.log('User is not signed in to patient app. Redirecting to patient login.');
+        const loginUrl = `/patient_login?next=${encodeURIComponent(currentPath)}`;
+        window.location.href = loginUrl;
+    }
+    // --- End of Logic for Patient App ---
+  }
+}
+
+// --- Helper Functions ---
 function getNumber(id) {
   const element = document.getElementById(id);
-  if (!element) {
-    console.warn(`Elemento con ID '${id}' no encontrado para getNumber.`);
-    return null;
-  }
-  const value = element.value;
-  if (value === "" || value === null || value === undefined) return null;
-  const num = parseFloat(value);
+  if (!element || element.value === "" || element.value === null) return null;
+  const num = parseFloat(element.value);
   return isNaN(num) ? null : num;
 }
 
-/**
- * Obtiene una lista de strings de un elemento del DOM por su ID,
- * asumiendo que el valor es una cadena separada por comas.
- * Útil para campos Tagify que actualizan el valor del input original.
- * @param {string} id - El ID del elemento input.
- * @returns {string[]} Un array de strings, o un array vacío si no hay valor o el elemento no se encuentra.
- */
 function getList(id) {
   const element = document.getElementById(id);
   if (element && typeof element.value === 'string' && element.value.trim() !== '') {
-    // Primero, intenta parsear como JSON si es un array de objetos Tagify
     try {
-        const tags = JSON.parse(element.value);
-        if (Array.isArray(tags)) {
-            return tags.map(tag => tag.value.trim()).filter(s => s);
-        }
-    } catch (e) {
-        // Si no es JSON, o el parseo falla, trata como string separado por comas
-        // console.warn(`Valor para ${id} no es un JSON de Tagify, tratando como CSV. Valor:`, element.value);
-    }
-    return element.value.split(',').map(s => s.trim()).filter(s => s);
+      const tags = JSON.parse(element.value);
+      if (Array.isArray(tags)) return tags.map(tag => tag.value.trim()).filter(Boolean);
+    } catch (e) { /* Not JSON, treat as CSV */ }
+    return element.value.split(',').map(s => s.trim()).filter(Boolean);
   }
-
   return [];
-}
-/**---------------- Globals ----------------------*/
-let currentPlanDataBaseData = null;
-let currentEvaluationId = null;
-let lastCalculatedReferences = {}; // Para almacenar las referencias de la última llamada a calcularValores
-window.selectedRelevantPreparations = []; // Inicializar la variable global
-
-/**------------------- UI Helpers ----------------------*/
-function setupTechnicalPdfButton(evaluationId) {
-  const techPdfButton = document.getElementById("viewTechnicalPdfButton");
-  if (!techPdfButton) {
-    console.warn("WARN: Botón viewTechnicalPdfButton no encontrado.");
-    return;
-  }
-  if (evaluationId) {
-    const pdfUrl = `/ver_pdf/${evaluationId}`;
-    techPdfButton.onclick = () => {
-      console.log(`INFO: Abriendo ${pdfUrl}`);
-      window.open(pdfUrl, "_blank");
-    };
-    techPdfButton.style.display = "inline-block";
-  } else {
-    techPdfButton.style.display = "none";
-    techPdfButton.onclick = null;
-  }
-}
-
-/**
- * Configura la visibilidad y los handlers de los botones relacionados con una evaluación guardada (PDFs, Email).
- * @param {string|number|null} evaluationId - El ID de la evaluación. Si es null, oculta los botones.
- */
-function setupPatientPdfButton(evaluationId) {
-  const patientPdfButton = document.getElementById("viewPatientPdfButton");
-  const sendEmailButton = document.getElementById("sendEmailToPatientButton");
-
-  if (evaluationId) {
-    if (patientPdfButton) {
-      const pdfUrl = `/ver_pdf_paciente/${evaluationId}`;
-      patientPdfButton.onclick = () => {
-        console.log(`INFO: Abriendo PDF paciente ${pdfUrl}`);
-        window.open(pdfUrl, "_blank");
-      };
-      patientPdfButton.style.display = "inline-block";
-    } else {
-      console.warn("WARN: Botón viewPatientPdfButton no encontrado.");
-    }
-
-    if (sendEmailButton) {
-      sendEmailButton.onclick = () => sendPlanByEmail(evaluationId);
-      sendEmailButton.style.display = "inline-block";
-    } else {
-      console.warn("WARN: Botón sendEmailToPatientButton no encontrado.");
-    }
-  } else {
-    if (patientPdfButton) {
-      patientPdfButton.style.display = "none";
-      patientPdfButton.onclick = null;
-    }
-    if (sendEmailButton) {
-      sendEmailButton.style.display = "none";
-      sendEmailButton.onclick = null;
-    }
-  }
 }
 
 function showFinalMessage(message, type = "info", autoHide = true) {
   const finalMessageDiv = document.getElementById("final-message");
   if (!finalMessageDiv) return;
-  finalMessageDiv.innerHTML = "";
-  finalMessageDiv.textContent = message;
+  finalMessageDiv.innerHTML = message;
   finalMessageDiv.className = `mt-3 alert alert-${type} alert-dismissible fade show`;
   finalMessageDiv.style.display = "block";
-  if (!finalMessageDiv.querySelector(".btn-close")) {
-    const closeButton = document.createElement("button");
-    closeButton.type = "button";
-    closeButton.className = "btn-close";
-    closeButton.setAttribute("data-bs-dismiss", "alert");
-    closeButton.setAttribute("aria-label", "Close");
-    closeButton.onclick = () => {
-      finalMessageDiv.style.display = "none";
-    };
-    finalMessageDiv.appendChild(closeButton);
-  }
   if (autoHide) {
     setTimeout(() => {
       try {
         const alertInstance = bootstrap.Alert.getOrCreateInstance(finalMessageDiv);
         if (alertInstance) alertInstance.close();
-        else finalMessageDiv.style.display = "none";
-      } catch (e) {
-        finalMessageDiv.style.display = "none";
-      }
+      } catch (e) { finalMessageDiv.style.display = "none"; }
     }, 7000);
   }
 }
 
 function hideFinalMessage() {
   const finalMessageDiv = document.getElementById("final-message");
-  if (finalMessageDiv) {
-    finalMessageDiv.style.display = "none";
+  if (finalMessageDiv) finalMessageDiv.style.display = "none";
+}
+
+function getCsrfToken() {
+  const csrfTokenElement = document.querySelector('meta[name="csrf-token"]');
+  if (csrfTokenElement) {
+    return csrfTokenElement.getAttribute('content');
+  }
+  const hiddenInput = document.querySelector('input[name="csrf_token"]');
+  if (hiddenInput) return hiddenInput.value;
+  console.error("CSRF token not found in meta tag or hidden input.");
+  return null;
+}
+
+function setupActionButtons(evaluationId) {
+  const techPdfButton = document.getElementById("viewTechnicalPdfButton");
+  const patientPdfButton = document.getElementById("viewPatientPdfButton");
+  const sendEmailButton = document.getElementById("sendEmailToPatientButton");
+
+  const setupButton = (button, url) => {
+    if (button) {
+      if (url) {
+        button.onclick = () => window.open(url, "_blank");
+        button.style.display = "inline-block";
+      } else {
+        button.style.display = "none";
+      }
+    }
+  };
+
+  setupButton(techPdfButton, evaluationId ? `/ver_pdf/${evaluationId}` : null);
+  setupButton(patientPdfButton, evaluationId ? `/ver_pdf_paciente/${evaluationId}` : null);
+  if (sendEmailButton) {
+      if (evaluationId) {
+        sendEmailButton.onclick = () => sendPlanByEmail(evaluationId);
+        sendEmailButton.style.display = "inline-block";
+      } else {
+        sendEmailButton.style.display = "none";
+      }
   }
 }
 
-/**
- * Limpia el formulario y el estado de búsqueda.
- * @param {boolean} isInitialLoad - Indica si la limpieza es parte de la carga inicial de la página.
- */
-function clearFormAndSearch(isInitialLoad = false) {
-  console.log("INFO: Limpiando formulario y estado...");
-
-  // 1) Reset del formulario principal
-  const form = document.getElementById("patient-plan-form"); // Asegúrate de que este ID exista
-  if (form) {
-    form.reset();
+// --- Form Population Logic ---
+function populateTagifyField(fieldName, dataArray) {
+  if (!Array.isArray(dataArray)) dataArray = [];
+  const stringDataArray = dataArray.map(item => String(item || '').trim()).filter(Boolean);
+  if (window.tagifyInstances && window.tagifyInstances[fieldName]) {
+    const tagifyInstance = window.tagifyInstances[fieldName];
+    tagifyInstance.removeAllTags();
+    if (stringDataArray.length > 0) tagifyInstance.addTags(stringDataArray);
+  } else {
+    const inputElement = document.getElementById(fieldName);
+    if (inputElement) inputElement.value = stringDataArray.join(',');
   }
+}
 
-  // 2) Reset de valores calculados
-  const calculatedIds = [
-    "calculated-complexion",
-    "calculated-ideal-weight",
-    "calculated-get",
-    "calculated-imc",
-    "calculated-whr",
-    "calculated-whtr"
-  ];
-  calculatedIds.forEach(id => {
+function populatePreloadForm(data, actionContext) {
+  console.log("Populating form. Context:", actionContext);
+  if (!data || typeof data !== 'object') return;
+
+  function setValue(id, value, isDate = false) {
     const el = document.getElementById(id);
     if (el) {
-      // Para peso ideal, mantenemos la unidad
-      el.textContent = id === "calculated-ideal-weight" ? "-- kg" : "--";
-      // Reiniciamos clases de color (si quieres)
-      el.className = "value-display risk-none";
+      let finalValue = value !== null && value !== undefined ? String(value) : '';
+      if (isDate && finalValue && finalValue.includes('T')) finalValue = finalValue.split('T')[0];
+      el.value = finalValue;
     }
-  });
-
-  // 3) Reset de checkboxes
-  document.querySelectorAll('input[name="pathologies"]').forEach(cb => {
-    cb.checked = false;
-  });
-
-  // 4) Ocultar sección de plan generado y resetear su contenido
-  const planSection = document.getElementById("plan-display-section");
-  if (planSection) {
-    planSection.style.display = "none";
-  }
-  const planText = document.getElementById("planTextArea");
-  if (planText) {
-    planText.value = "";
-  }
-  const obs = document.getElementById("user_observations");
-  if (obs) {
-    obs.value = "";
   }
 
-  // 5) Ocultar mensaje final
-  hideFinalMessage();
+  setValue('patient_id', data.patient_id || data.id);
+  setValue('name', data.name);
+  setValue('surname', data.surname);
+  setValue('cedula', data.cedula);
+  setValue('email', data.email);
+  setValue('phone_number', data.phone_number);
+  setValue('education_level', data.education_level);
+  setValue('purchasing_power', data.purchasing_power);
+  setValue('dob', data.dob, true);
+  setValue('sex', data.sex);
+  setValue('height_cm', data.height_cm);
 
-  // 6) Reset de búsqueda
-  const searchMsg = document.getElementById("search-message");
-  if (searchMsg) {
-    searchMsg.textContent = "Ingrese término y pulse Buscar.";
-  }
-  const listContainer = document.getElementById("patient-list-container");
-  if (listContainer) {
-    listContainer.style.display = "none";
-  }
-  const listUl = document.getElementById("patient-select-list");
-  if (listUl) {
-    listUl.innerHTML = "";
-  }
-  const histContainer = document.getElementById("evaluation-history-container");
-  if (histContainer) {
-    histContainer.style.display = "none";
-  }
-  const histSelect = document.getElementById("evaluation-select");
-  if (histSelect) {
-    histSelect.innerHTML = '<option value="">-- Nueva evaluación o seleccionar historial --</option>';
-  }
+  const tagifyFields = ['allergies', 'intolerances', 'preferences', 'aversions'];
+  tagifyFields.forEach(fieldName => populateTagifyField(fieldName, data[fieldName] || []));
 
-  // 7) Reset de botón de imprimir / estado global
-  setupTechnicalPdfButton(null);
-  setupPatientPdfButton(null); // Esto ahora también maneja el botón de email
-  currentPlanDataBaseData = null;
-  lastCalculatedReferences = {}; // Resetear referencias cacheadas
-  currentEvaluationId = null;
+  if (actionContext === 'edit_evaluation' || actionContext === 'load_eval_for_new') {
+    setValue('loaded_evaluation_id', data.evaluation_id);
+    const loadedDisplay = document.getElementById('loaded_evaluation_id_display');
+    if (loadedDisplay) {
+      loadedDisplay.textContent = actionContext === 'edit_evaluation'
+        ? `Editando Evaluación ID: ${data.evaluation_id}.`
+        : `Cargando datos desde Evaluación ID: ${data.evaluation_id} como base.`;
+    }
+    setValue('weight_at_plan', data.weight_at_eval || data.weight_at_plan);
+    setValue('wrist_circumference_cm', data.wrist_circumference_cm);
+    setValue('waist_circumference_cm', data.waist_circumference_cm);
+    setValue('hip_circumference_cm', data.hip_circumference_cm);
+    setValue('gestational_age_weeks', data.gestational_age_weeks !== null ? data.gestational_age_weeks : '0');
+    setValue('activity_factor', data.activity_factor || '1.2');
+    
+    const pathologiesFromServer = data.pathologies || [];
+    document.querySelectorAll('input[name="pathologies"]').forEach(checkbox => {
+      checkbox.checked = pathologiesFromServer.includes(checkbox.value);
+    });
+    setValue('other_pathologies_text', data.other_pathologies_text);
+    setValue('postoperative_text', data.postoperative_text);
+    setValue('diet_type', data.diet_type);
+    setValue('other_diet_type_text', data.other_diet_type_text);
+    setValue('target_weight', data.target_weight);
+    setValue('target_waist_cm', data.target_waist_cm);
+    setValue('target_protein_perc', data.target_protein_perc);
+    setValue('target_carb_perc', data.target_carb_perc);
+    setValue('target_fat_perc', data.target_fat_perc);
+    
+    const micronutrients = data.micronutrients || {};
+    setValue('mic_k', micronutrients.potassium_mg);
+    setValue('mic_ca', micronutrients.calcium_mg);
+    setValue('mic_na', micronutrients.sodium_mg);
+    setValue('mic_chol', micronutrients.cholesterol_mg);
 
-  // 8) Reset de campos ocultos y búfer de búsqueda
-  const hid1 = document.getElementById("patient_id");
-  if (hid1) hid1.value = "";
-  const hid2 = document.getElementById("loaded_evaluation_id");
-  if (hid2) hid2.value = "";
-  const searchInput = document.getElementById("search_query");
-  if (searchInput) searchInput.value = "";
+    const planTextArea = document.getElementById('planTextArea');
+    if (planTextArea) {
+      planTextArea.value = data.edited_plan_text || "";
+      if (data.edited_plan_text) document.getElementById('plan-display-section').style.display = 'block';
+    }
+    setValue('user_observations', data.user_observations);
 
-  // 9) Limpiar contenedor de preparaciones relevantes
-  const relevantPreparationsContainer = document.getElementById('relevant-preparations-container');
-  if (relevantPreparationsContainer) {
-    relevantPreparationsContainer.innerHTML = '<p id="relevant-preparations-placeholder">Haz clic en el botón para buscar preparaciones.</p>';
+    const baseFoodsContainer = document.getElementById('base-foods-container');
+    if (baseFoodsContainer) {
+        baseFoodsContainer.innerHTML = '';
+        if (data.base_foods && Array.isArray(data.base_foods) && data.base_foods.length > 0) {
+            data.base_foods.forEach(food => addBaseFoodRow(food));
+        }
+    }
   }
-  window.selectedRelevantPreparations = []; // Limpiar las preparaciones seleccionadas
-  // 10) Limpiar mensaje de error de validación
-  displayValidationErrorInForm("");
+  setTimeout(calcularValores, 150);
 }
 
-/**
- * Envía el plan del paciente por email.
- * @param {string|number} evaluationId - El ID de la evaluación a enviar.
- */
-async function sendPlanByEmail(evaluationId) {
-    console.log(`****** INICIO sendPlanByEmail() para evaluación ID: ${evaluationId} ******`);
-    if (!evaluationId) {
-        alert("No hay una evaluación guardada para enviar por email.");
-        console.warn("WARN: sendPlanByEmail llamado sin evaluationId.");
-        return;
-    }
+async function loadUserProfile() {
+    const profileEmailInput = document.getElementById('profile-email');
+    const profileNameInput = document.getElementById('profile-name');
+    const profileSurnameInput = document.getElementById('profile-surname');
+    const profileProfessionSelect = document.getElementById('profile-profession');
+    const profileLicenseNumberInput = document.getElementById('profile-license-number');
+    const profileCityInput = document.getElementById('profile-city');
+    const profileCountrySelect = document.getElementById('profile-country');
+    const profileAddressInput = document.getElementById('profile-address');
+    const profilePhoneCodeSelect = document.getElementById('profile-phone-code');
+    const profileLocalPhoneNumberInput = document.getElementById('profile-local-phone-number');
+    const profileMessageDiv = document.getElementById('profile-message');
 
-    const emailButton = document.getElementById("sendEmailToPatientButton");
-    const originalButtonHtml = emailButton ? emailButton.innerHTML : null;
-
-    if (emailButton) {
-        emailButton.disabled = true;
-        emailButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Enviando...';
-    }
-    showFinalMessage("Enviando plan por email...", "info", false); // No auto-ocultar este mensaje
+    if (!profileEmailInput || !profileNameInput) return;
 
     try {
-        const response = await fetch(`/enviar_plan_por_email/${evaluationId}`, {
-            method: 'POST', // O GET, según tu implementación de backend
-            headers: { 'Content-Type': 'application/json' },
-            // body: JSON.stringify({ some_optional_data: "value" }) // Si necesitas enviar datos en el cuerpo
+        const user = auth.currentUser;
+        if (!user) throw new Error("No autenticado. Por favor, inicia sesión de nuevo.");
+        const token = await user.getIdToken();
+
+        const response = await fetch('/api/user_info', {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
         });
 
-        const result = await response.json();
-
         if (!response.ok) {
-            console.error("ERROR: Respuesta no OK de /enviar_plan_por_email. Status:", response.status, "Status Text:", response.statusText);
-            let errorDetail = `Error del servidor: ${response.status} ${response.statusText}`;
-            const contentType = response.headers.get('Content-Type');
+            const errorData = await response.json().catch(() => ({ error: `Error del servidor: ${response.status}` }));
+            throw new Error(errorData.error);
+        }
+        const userInfo = await response.json();
+        profileEmailInput.value = userInfo.email || '';
+        profileNameInput.value = userInfo.name || '';
+        profileSurnameInput.value = userInfo.surname || '';
+        profileProfessionSelect.value = userInfo.profession || '';
+        profileLicenseNumberInput.value = userInfo.license_number || '';
+        profileCityInput.value = userInfo.city || '';
+        profileCountrySelect.value = userInfo.country || '';
+        profileAddressInput.value = userInfo.address || '';
 
-            if (contentType && contentType.includes('application/json')) {
-                // Si es JSON, intenta parsearlo para más detalles
-                const errorData = await response.json().catch(() => ({ error: 'No se pudo parsear el JSON de error.' }));
-                errorDetail = errorData.error || errorDetail;
-                console.error("ERROR: Respuesta JSON de error:", errorData);
+        if (userInfo.phone_number) {
+            const phoneMatch = userInfo.phone_number.match(/^(\+\d+)\s*(.*)$/);
+            if (phoneMatch) {
+                profilePhoneCodeSelect.value = phoneMatch[1];
+                profileLocalPhoneNumberInput.value = phoneMatch[2];
             } else {
-                // Si no es JSON (como HTML para 404), obtén el texto de la respuesta (opcional, para depuración)
-                const errorText = await response.text().catch(() => 'No se pudo obtener el texto de la respuesta.');
-                console.error("ERROR: Respuesta no JSON (primeros 200 chars):", errorText.substring(0, 200) + '...');
+                profileLocalPhoneNumberInput.value = userInfo.phone_number;
             }
-            throw new Error(errorDetail); // Lanza el error con el detalle recolectado
+        } else {
+            profilePhoneCodeSelect.value = '';
+            profileLocalPhoneNumberInput.value = '';
         }
-
-        console.log("INFO: Respuesta exitosa de /enviar_plan_por_email:", result);
     } catch (error) {
-        console.error("ERROR en sendPlanByEmail:", error);
-        showFinalMessage(`Error al enviar email: ${error.message || 'Error desconocido.'}`, "danger");
+        console.error("Error loading user profile:", error);
+        profileMessageDiv.textContent = `Error al cargar el perfil: ${error.message}`;
+        profileMessageDiv.className = 'alert alert-danger mt-3';
+        profileMessageDiv.style.display = 'block';
+    }
+}
+
+async function handleProfileUpdate(event) {
+    event.preventDefault();
+    const profileNameInput = document.getElementById('profile-name');
+    const profileMessageDiv = document.getElementById('profile-message');
+    const spinner = document.getElementById('profile-spinner');
+
+    profileMessageDiv.style.display = 'none';
+    profileMessageDiv.classList.remove('alert-success', 'alert-danger');
+    spinner.style.display = 'inline-block';
+
+    try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("No autenticado. Por favor, inicia sesión de nuevo.");
+        const token = await user.getIdToken();
+
+        const profilePhoneCodeSelect = document.getElementById('profile-phone-code');
+        const profileLocalPhoneNumberInput = document.getElementById('profile-local-phone-number');
+        const fullPhoneNumber = (profilePhoneCodeSelect.value ? profilePhoneCodeSelect.value + ' ' : '') + profileLocalPhoneNumberInput.value.trim();
+
+        const updatedProfileData = {
+            name: profileNameInput.value,
+            surname: document.getElementById('profile-surname').value,
+            profession: document.getElementById('profile-profession').value,
+            license_number: document.getElementById('profile-license-number').value,
+            city: document.getElementById('profile-city').value,
+            country: document.getElementById('profile-country').value,
+            address: document.getElementById('profile-address').value,
+            phone_number: fullPhoneNumber
+        };
+
+        const response = await fetch('/api/user/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify(updatedProfileData)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `Error del servidor: ${response.status}`);
+        profileMessageDiv.textContent = result.message;
+        profileMessageDiv.className = 'alert alert-success mt-3';
+        profileMessageDiv.style.display = 'block';
+
+    } catch (error) {
+        console.error("Error updating user profile:", error);
+        profileMessageDiv.textContent = `Error al actualizar el perfil: ${error.message}`;
+        profileMessageDiv.className = 'alert alert-danger mt-3';
+        profileMessageDiv.style.display = 'block';
     } finally {
-        if (emailButton) {
-            emailButton.disabled = false;
-            emailButton.innerHTML = originalButtonHtml || '<i class="fas fa-envelope"></i> Enviar Plan por Email';
+        spinner.style.display = 'none';
+    }
+}
+
+async function updateWelcomeMessage() {
+    const welcomeMessageElement = document.getElementById('welcome-message');
+    if (!welcomeMessageElement) return;
+
+    try {
+        const user = auth.currentUser;
+        if (!user) {
+            welcomeMessageElement.textContent = 'Bienvenido/a.';
+            return;
+        }
+        const token = await user.getIdToken();
+
+        const response = await fetch('/api/user_info', {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.status === 401) {
+            console.warn("Failed to fetch user info: Session expired.");
+            welcomeMessageElement.textContent = 'Bienvenido/a.';
+            return;
+        }
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `Error del servidor: ${response.status}` }));
+            throw new Error(errorData.error);
+        }
+
+        const userInfo = await response.json();
+        if (userInfo.name) {
+            welcomeMessageElement.innerHTML = `Bienvenido/a, <strong>${userInfo.name}</strong>. Aquí puedes gestionar a tus pacientes.`;
+        } else {
+            welcomeMessageElement.textContent = 'Bienvenido/a.';
+        }
+
+    } catch (error) {
+        console.error("Error updating welcome message:", error);
+        welcomeMessageElement.textContent = 'Bienvenido/a.';
+    }
+}
+
+// --- Dashboard Functions ---
+function displayPatients(patientsList) {
+    const resultsContainer = document.getElementById('patientSearchResultsDashboard');
+    if (!resultsContainer) return;
+
+    resultsContainer.innerHTML = '';
+    if (patientsList && patientsList.length > 0) {
+        patientsList.forEach(patient => {
+            resultsContainer.innerHTML += `
+                <div class="patient-card">
+                    <h5>${patient.name} ${patient.surname}</h5>
+                    <p>C.I.: ${patient.cedula}</p>
+                    <a href="/paciente/${patient.id}/historial" class="btn btn-sm btn-outline-primary mt-2">
+                        <i class="fas fa-history"></i> Ver Historial
+                    </a>
+                </div>`;
+        });
+    } else {
+        resultsContainer.innerHTML = '<p class="text-center text-danger">No se encontraron pacientes.</p>';
+    }
+}
+
+async function loadAllPatients() {
+    const resultsContainer = document.getElementById('patientSearchResultsDashboard');
+    if (!resultsContainer) return;
+    resultsContainer.innerHTML = '<p class="text-center">Cargando todos los pacientes...</p>';
+
+    try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("No autenticado. Por favor, inicie sesión de nuevo.");
+        const token = await user.getIdToken();
+
+        const response = await fetch("/get_all_patients", {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.status === 401) throw new Error('Sesión expirada. Por favor, inicie sesión de nuevo.');
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `Error del servidor: ${response.status}` }));
+            throw new Error(errorData.error);
+        }
+        
+        const data = await response.json();
+        displayPatients(data.results || []);
+
+    } catch (error) {
+        console.error('Error al cargar todos los pacientes:', error);
+        resultsContainer.innerHTML = `<p class="text-center text-danger">${error.message}</p>`;
+    }
+}
+
+async function searchPatients(query) {
+    const resultsContainer = document.getElementById('patientSearchResultsDashboard');
+    if (!resultsContainer) return;
+    resultsContainer.innerHTML = '<p class="text-center">Buscando...</p>';
+
+    try {
+        const user = auth.currentUser;
+        if (!query.trim()) {
+            loadAllPatients();
+            return;
+        }
+
+        if (!user) throw new Error("No autenticado. Por favor, inicie sesión de nuevo.");
+        const token = await user.getIdToken();
+
+        const response = await fetch("/buscar_paciente", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': `Bearer ${token}`
+            },
+            body: new URLSearchParams({ search_query: query })
+        });
+
+        if (response.status === 401) throw new Error('Sesión expirada. Por favor, inicie sesión de nuevo.');
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `Error del servidor: ${response.status}` }));
+            throw new Error(errorData.error);
+        }
+        
+        const data = await response.json();
+        const patientsToDisplay = data.results ? data.results.map(item => item.patient) : [];
+        displayPatients(patientsToDisplay);
+
+    } catch (error) {
+        console.error('Error en búsqueda:', error);
+        resultsContainer.innerHTML = `<p class="text-center text-danger">${error.message}</p>`;
+    }
+}
+
+function initializeDashboard() {
+    const searchForm = document.getElementById('searchPatientFormDashboard');
+    if (searchForm) {
+        searchForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const query = document.getElementById('searchQueryDashboard').value;
+            searchPatients(query);
+        });
+    }
+}
+
+function updateReferenceDisplay(containerId, rangesObject) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    let html = '';
+    if (rangesObject && typeof rangesObject === 'object') {
+        for (const [label, value] of Object.entries(rangesObject)) {
+            if (label.startsWith('_')) continue; 
+            html += `<small class="d-block"><strong>${label}:</strong> ${value}</small>`;
         }
     }
+    container.innerHTML = html;
 }
 
-/**
- * Muestra un mensaje de error de validación en el formulario.
- * @param {string} message - El mensaje de error a mostrar. Si está vacío, oculta el contenedor.
- */
-function displayValidationErrorInForm(message) {
-  const errorContainer = document.getElementById('validation-error-container'); // Asegúrate de tener este div en tu HTML
-  if (errorContainer) {
-    errorContainer.textContent = message;
-    errorContainer.style.display = message ? 'block' : 'none'; // Mostrar u ocultar
-    if (message) {
-      errorContainer.className = 'alert alert-danger mt-2'; // Clases de Bootstrap para alerta
-    } else {
-      errorContainer.className = ''; // Limpiar clases si no hay mensaje
-    }
-    // Si se muestra un mensaje, hacer scroll hacia él
-    if (message && errorContainer.style.display === 'block') {
-      errorContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }
-}
-
-/**
- * Limpia los campos calculados en la UI cuando ocurre un error.
- */
-function clearCalculatedFieldsOnError() {
-  const idsToClear = ["calculated-imc", "calculated-complexion", "calculated-ideal-weight", "calculated-get", "calculated-whr", "calculated-whtr"];
-  idsToClear.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.textContent = (id === "calculated-ideal-weight") ? "-- kg" : "--";
-      el.className = "value-display risk-none"; // Resetear clase de riesgo
-    }
-  });
-  // También podrías querer limpiar los contenedores de rangos (imc-ranges, whr-ranges, whtr-ranges)
-  ['imc-ranges', 'whr-ranges', 'whtr-ranges'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = "";
-  });
-}
-
-/**---------------- Backend Interaction ------------------*/
-async function buscarPaciente() {
-  // tu implementación...
-}
-function displayPatientDataAndHistory(li) {
-  // tu implementación...
-}
-async function loadEvaluationData(id) {
-  // tu implementación...
-}
-
-/**
- * Calcula valores derivados automáticamente.
- */
-async function calcularValores(event) {
-  console.log(`****** INICIO calcularValores() ******`);
+// --- Core Logic Functions ---
+async function calcularValores() {
+  console.log("****** calcularValores() triggered ******");
   const idsToFetch = {
-    height: "height_cm",
-    weight: "weight_at_plan",
-    wrist: "wrist_circumference_cm",
-    waist: "waist_circumference_cm",
-    hip: "hip_circumference_cm",
-    dob: "dob",
-    sex: "sex",
-    activity_factor: "activity_factor"
+    height: "height_cm", weight: "weight_at_plan", wrist: "wrist_circumference_cm",
+    waist: "waist_circumference_cm", hip: "hip_circumference_cm", dob: "dob",
+    sex: "sex", activity_factor: "activity_factor"
   };
   const data = {};
-  console.log("INFO: Iniciando recolección de datos para calcularValores...");
   for (const k in idsToFetch) {
     const element = document.getElementById(idsToFetch[k]);
-    let v = element ? element.value : null;
-    let originalValue = v; // Guardar valor original para logging
-
-    if (element) {
-        if (["height", "weight", "wrist", "waist", "hip", "activity_factor"].includes(k)) {
-          v = parseFloat(v);
-          if (isNaN(v) || v <= 0) v = null; // Si no es un número positivo, se considera null
-        }
-        data[k] = v || null; // Si v es una cadena vacía, también se convierte en null aquí
-        console.log(`INFO: Campo procesado: ${k} (ID: ${idsToFetch[k]}), Original: "${originalValue}", Final en data: ${data[k]}`);
-    } else {
-        data[k] = null;
-        console.warn(`WARN: Elemento no encontrado para ${k} (ID: ${idsToFetch[k]}). Establecido a null.`);
-    }
+    data[k] = element ? element.value : null;
   }
-
-  // Validar datos mínimos
-  if (["height", "weight", "dob", "sex", "activity_factor"].some(f => !data[f])) {
-    console.warn("WARN: Faltan datos requeridos para calcularValores. Saliendo de la función. Datos actuales:", JSON.parse(JSON.stringify(data)));
-    // Podrías mostrar un mensaje al usuario aquí también si lo deseas
-    // displayValidationErrorInForm("Faltan datos básicos (altura, peso, fecha de nacimiento, sexo, factor de actividad) para realizar los cálculos.");
-    // clearCalculatedFieldsOnError(); // Limpiar campos si faltan datos básicos
+  if (!data.height || !data.weight || !data.dob || !data.sex || !data.activity_factor) {
+    console.warn("Faltan datos básicos para calcularValores.");
+    updateReferenceDisplay('imc-ranges', {});
+    updateReferenceDisplay('whr-ranges', {});
+    updateReferenceDisplay('whtr-ranges', {});
     return;
   }
-  console.log("INFO: Datos recolectados y validados para calcularValores:", JSON.parse(JSON.stringify(data)));
-
-  // Reset UI antes de la llamada
-  ["calculated-imc","calculated-ideal-weight","calculated-get",
-   "calculated-complexion","calculated-whr","calculated-whtr"
-  ].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = id==="calculated-ideal-weight" ? "-- kg" : "--";
-  });
-
   try {
-    console.log("INFO: Enviando petición a /calcular_valores con datos:", JSON.parse(JSON.stringify(data)));
     const resp = await fetch("/calcular_valores", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken()
+      },
       body: JSON.stringify(data)
     });
-    console.log("INFO: Respuesta recibida de /calcular_valores, status:", resp.status);
-    
     if (!resp.ok) {
-        // Intenta parsear el JSON de error
-        const errorData = await resp.json().catch(() => ({ error: `Error del servidor: ${resp.status}. No se pudo obtener detalle.` }));
-        console.error("ERROR: Respuesta no OK de /calcular_valores. Respuesta JSON:", errorData);
-        throw new Error(errorData.error || `Error del servidor: ${resp.status}`);
+        const errorData = await resp.json().catch(() => ({ error: `Error del servidor: ${resp.status}` }));
+        throw new Error(errorData.error);
     }
+    const res = await resp.json();
     
-    const res = await resp.json(); // Parsear JSON solo si la respuesta es OK
-    console.log("INFO: Datos JSON de respuesta de /calcular_valores:", JSON.parse(JSON.stringify(res)));
-
-    // Si todo OK, limpiar cualquier mensaje de error previo
-    displayValidationErrorInForm("");
-
-    // IMC
-    const imcEl = document.getElementById("calculated-imc");
-    if (imcEl) {
-      imcEl.textContent = res.imc?.toFixed(1) ?? "--";
-      imcEl.className = `value-display risk-${res.imc_risk||"none"}`;
-    }
-    // Rangos IMC
-    const imcRangesEl = document.getElementById("imc-ranges");
-    if (imcRangesEl) {
-      const refs = res.references?.imc || {};
-      imcRangesEl.innerHTML = Object.entries(refs)
-        .filter(([k]) => k!=="riesgo_actual")
-        .map(([k,v]) => `<strong>${k.replace(/_/g," ")}:</strong> ${v}`)
-        .join("<br>");
-    }
-
-    // Complexión
-    const compEl = document.getElementById("calculated-complexion");
-    if (compEl) compEl.textContent = res.complexion||"--";
-
-    // Peso ideal
-    const idealEl = document.getElementById("calculated-ideal-weight");
-    if (idealEl) idealEl.textContent = (res.ideal_weight?.toFixed(1)||"--")+" kg";
-
-    // GET
-    const getEl = document.getElementById("calculated-get");
-    if (getEl) getEl.textContent = res.get?.toFixed(0)||"--";
-
-    // WHR
-    const whrEl = document.getElementById("calculated-whr");
-    if (whrEl) {
-      whrEl.textContent = res.waist_hip_ratio?.toFixed(2)||"--";
-      whrEl.className = `value-display risk-${res.whr_risk||"none"}`;
-    }
-    const whrRangesEl = document.getElementById("whr-ranges");
-    if (whrRangesEl) {
-      const refs = res.references?.whr || {};
-      whrRangesEl.innerHTML = Object.entries(refs)
-        .filter(([k]) => k!=="riesgo_actual")
-        .map(([k,v]) => `<strong>${k.replace(/_/g," ")}:</strong> ${v}`)
-        .join("<br>");
-    }
-
-    // WHTR
-    const whtrEl = document.getElementById("calculated-whtr");
-    if (whtrEl) {
-      whtrEl.textContent = res.waist_height_ratio?.toFixed(2)||"--";
-      whtrEl.className = `value-display risk-${res.whtr_risk||"none"}`;
-    }
-    const whtrRangesEl = document.getElementById("whtr-ranges");
-    if (whtrRangesEl) {
-      const refs = res.references?.whtr || {};
-      whtrRangesEl.innerHTML = Object.entries(refs)
-        .filter(([k]) => k!=="riesgo_actual")
-        .map(([k,v]) => `<strong>${k.replace(/_/g," ")}:</strong> ${v}`)
-        .join("<br>");
-    }
-    // Almacenar las referencias globalmente para usarlas en generarPlan
+    const updateEl = (id, value, suffix = '', risk = null) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = (value !== null && value !== undefined) ? `${value}${suffix}` : '--';
+            if (risk) el.className = `value-display risk-${risk}`;
+        }
+    };
+    updateEl("calculated-imc", res.imc?.toFixed(1), '', res.imc_risk);
+    updateEl("calculated-complexion", res.complexion);
+    updateEl("calculated-ideal-weight", res.ideal_weight?.toFixed(1), ' kg');
+    updateEl("calculated-get", res.get?.toFixed(0), ' kcal');
+    updateEl("calculated-whr", res.waist_hip_ratio?.toFixed(2), '', res.whr_risk);
+    updateEl("calculated-whtr", res.waist_height_ratio?.toFixed(2), '', res.whtr_risk);
     lastCalculatedReferences = res.references || {};
-    console.log("INFO: Referencias almacenadas desde calcularValores:", JSON.parse(JSON.stringify(lastCalculatedReferences)));
 
+    updateReferenceDisplay('imc-ranges', res.references?.imc);
+    updateReferenceDisplay('whr-ranges', res.references?.whr);
+    updateReferenceDisplay('whtr-ranges', res.references?.whtr);
   } catch (err) {
-    console.error("ERROR en calcularValores (durante fetch o procesamiento de respuesta):", err);
-    displayValidationErrorInForm(err.message || "Error desconocido al calcular valores.");
-    // Limpiar referencias si hubo error
-    lastCalculatedReferences = {};
-    console.log("INFO: Referencias limpiadas debido a error en calcularValores.");
-    // Limpiar campos calculados en la UI
-    clearCalculatedFieldsOnError();
+    console.error("ERROR en calcularValores:", err);
+    showFinalMessage(`Error en cálculo: ${err.message}`, "danger");
   }
 }
 
-/**
- * Carga y muestra preparaciones relevantes para el paciente actual.
- */
 async function loadRelevantPreparationsForPatient() {
-  const relevantPreparationsContainer = document.getElementById('relevant-preparations-container');
-  const placeholder = document.getElementById('relevant-preparations-placeholder');
-  if (!relevantPreparationsContainer || !placeholder) {
-    console.error("Contenedores para preparaciones relevantes no encontrados.");
-    return;
-  }
-
-  placeholder.textContent = 'Buscando preparaciones relevantes...';
-  relevantPreparationsContainer.innerHTML = ''; // Limpiar resultados anteriores
-  relevantPreparationsContainer.appendChild(placeholder);
-
-  // Recolectar datos del paciente para enviar al backend
-  // Principalmente patologías, pero podrías añadir otros criterios si tu API los soporta
-  const patientPathologies = Array.from(document.querySelectorAll('input[name="pathologies"]:checked')).map(cb => cb.value);
-  const patientAversions = getList('aversions'); 
-  const patientAllergies = getList('allergies'); // Recolectar alergias
-  const patientIntolerances = getList('intolerances'); // Recolectar intolerancias
-  
-  // Aquí podrías añadir más datos si tu endpoint /api/relevant_preparations_for_patient los usa
-  const patientDataForFiltering = {
-    pathologies: patientPathologies,
-    aversions: patientAversions,
-    allergies: patientAllergies,         // Incluir alergias
-    intolerances: patientIntolerances  // Incluir intolerancias
-    // Ejemplo: objective_low_cholesterol: document.getElementById('some_cholesterol_objective_checkbox')?.checked // Mantener ejemplo
+  const container = document.getElementById('relevant-preparations-container');
+  if (!container) return;
+  container.innerHTML = '<p id="relevant-preparations-placeholder">Buscando...</p>';
+  const patientData = {
+    pathologies: Array.from(document.querySelectorAll('input[name="pathologies"]:checked')).map(cb => cb.value),
+    aversions: getList('aversions'),
+    allergies: getList('allergies'),
+    intolerances: getList('intolerances'),
+    diet_type: document.getElementById('diet_type')?.value || '',
+    other_diet_type_text: document.getElementById('other_diet_type_text')?.value || ''
   };
-
   try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("No autenticado. Por favor, inicie sesión.");
+    const token = await user.getIdToken();
+
     const response = await fetch('/api/relevant_preparations_for_patient', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patientDataForFiltering)
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        "X-CSRFToken": getCsrfToken()
+      },
+      body: JSON.stringify(patientData)
     });
-
+    if (response.status === 401) throw new Error('Sesión expirada.');
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: `Error del servidor: ${response.status}` }));
-      throw new Error(errorData.error || `Error ${response.status} al cargar preparaciones relevantes.`);
+      throw new Error(errorData.error);
     }
-
     const preparations = await response.json();
-    placeholder.style.display = 'none'; // Ocultar placeholder
-
+    container.innerHTML = '';
     if (preparations.length === 0) {
-      relevantPreparationsContainer.innerHTML = '<p class="text-muted">No se encontraron preparaciones favoritas relevantes para los criterios actuales del paciente.</p>';
+      container.innerHTML = '<p class="text-muted">No se encontraron preparaciones relevantes.</p>';
       return;
     }
-
     preparations.forEach(prep => {
       const div = document.createElement('div');
       div.classList.add('form-check', 'mb-2');
-      div.innerHTML = `
-        <input class="form-check-input relevant-preparation-checkbox" type="checkbox" value="${prep.id}" id="prep_fav_${prep.id}" data-preparation='${JSON.stringify(prep)}'>
-        <label class="form-check-label" for="prep_fav_${prep.id}">
-          <strong>${prep.name}</strong> (${prep.preparation_type || 'N/A'}) - Tags: <em>${(prep.suitability_tags || []).join(', ') || 'Ninguno'}</em>
-        </label>
-      `;
-      relevantPreparationsContainer.appendChild(div);
-
-      // Dentro de loadRelevantPreparationsForPatient, después de crear el checkbox:
-      const checkboxInput = div.querySelector('.relevant-preparation-checkbox');
-      checkboxInput.addEventListener('change', function() {
-          const prepData = JSON.parse(this.dataset.preparation);
-          window.selectedRelevantPreparations = window.selectedRelevantPreparations || [];
-          if (this.checked) {
-              // Añadir si no está ya (por si acaso)
-              if (!window.selectedRelevantPreparations.find(p => p.id === prepData.id)) {
-                  window.selectedRelevantPreparations.push(prepData);
-              }
-          } else {
-              // Eliminar
-              window.selectedRelevantPreparations = window.selectedRelevantPreparations.filter(p => p.id !== prepData.id);
-          }
-          console.log("INFO: window.selectedRelevantPreparations actualizado:", window.selectedRelevantPreparations);
-      });
-    }); // Fin de forEach
-  } catch (error) { // Corrected: catch block now immediately follows the try block's closing brace
+      div.innerHTML = `<input class="form-check-input" type="checkbox" value="${prep.id}" id="prep_fav_${prep.id}" data-preparation='${JSON.stringify(prep)}'><label class="form-check-label" for="prep_fav_${prep.id}"><strong>${prep.name}</strong></label>`;
+      container.appendChild(div);
+    });
+  } catch (error) {
     console.error("Error en loadRelevantPreparationsForPatient:", error);
-    relevantPreparationsContainer.innerHTML = `<p class="text-danger">Error al cargar preparaciones: ${error.message}</p>`;
-    placeholder.style.display = 'none';
+    container.innerHTML = `<p class="text-danger">Error al cargar: ${error.message}</p>`;
   }
-} // Corrected: This brace now correctly closes the loadRelevantPreparationsForPatient function
+}
 
-// Corregido: Asegurar que no haya 'a' extra y que la función esté bien definida.
-async function generarPlan() { // Línea 590 en tu log
-  console.log("%c!!!!!! generarPlan function CALLED !!!!!!", "color: green; font-weight: bold; font-size: 1.2em;"); // Diagnostic log
-  console.log("****** INICIO generarPlan() ******");
+async function generarPlan() {
+  console.log("****** generarPlan() triggered ******");
   hideFinalMessage();
   currentPlanDataBaseData = null;
-  // No reseteamos lastCalculatedReferences aquí, ya que debe venir de la última ejecución de calcularValores
 
-  // Recolectar micro:
   const micronutrients = {
     potassium_mg: getNumber('mic_k'),
     calcium_mg: getNumber('mic_ca'),
@@ -603,33 +691,27 @@ async function generarPlan() { // Línea 590 en tu log
     cholesterol_mg: getNumber('mic_chol'),
   };
 
-
-  // Nueva lógica para base_foods que se enviará al backend:
   let baseFoodsForPayload = [];
-
-  // 1. Incluir UserPreparations detalladas si están seleccionadas
-  if (window.selectedRelevantPreparations && Array.isArray(window.selectedRelevantPreparations) && window.selectedRelevantPreparations.length > 0) {
-    window.selectedRelevantPreparations.forEach(prep => {
+  const selectedRelevantPreps = window.selectedRelevantPreparations || [];
+  if (selectedRelevantPreps.length > 0) {
+    selectedRelevantPreps.forEach(prep => {
       if (prep && typeof prep === 'object' && prep.name && Array.isArray(prep.ingredients)) {
         baseFoodsForPayload.push({
           name: prep.name,
-          original_ingredients: prep.ingredients.map(ing => ({ item: ing.item })) // Solo el nombre del item
+          original_ingredients: prep.ingredients.map(ing => ({ item: ing.item }))
         });
       }
     });
   }
 
-  // 2. Incluir strings simples del campo Tagify 'base_foods'
-  const baseFoodsFromTagify = getList('base_foods'); // getList devuelve un array de strings
-  baseFoodsFromTagify.forEach(foodName => {
+  const baseFoodsFromDynamicSelects = getBaseFoodsFromDynamicSelects();
+  baseFoodsFromDynamicSelects.forEach(foodName => {
     if (!baseFoodsForPayload.some(bf => typeof bf === 'object' && bf.name === foodName)) {
-      baseFoodsForPayload.push(foodName); // Añadir como string simple si no existe ya como objeto detallado
+      baseFoodsForPayload.push(foodName);
     }
   });
 
-  const pathologies = Array.from(document.querySelectorAll('input[name="pathologies"]:checked')).map(
-    (cb) => cb.value
-  );
+  const pathologies = Array.from(document.querySelectorAll('input[name="pathologies"]:checked')).map(cb => cb.value);
 
   const planBaseData = {
     patient_id: document.getElementById("patient_id").value || null,
@@ -644,14 +726,10 @@ async function generarPlan() { // Línea 590 en tu log
     purchasing_power: document.getElementById("purchasing_power").value,
     height_cm: parseFloat(document.getElementById("height_cm").value) || null,
     weight_at_plan: parseFloat(document.getElementById("weight_at_plan").value) || null,
-    wrist_circumference_cm:
-      parseFloat(document.getElementById("wrist_circumference_cm").value) || null,
-    waist_circumference_cm:
-      parseFloat(document.getElementById("waist_circumference_cm").value) || null,
-    hip_circumference_cm:
-      parseFloat(document.getElementById("hip_circumference_cm").value) || null,
-    gestational_age_weeks:
-      parseInt(document.getElementById("gestational_age_weeks").value, 10) || 0,
+    wrist_circumference_cm: parseFloat(document.getElementById("wrist_circumference_cm").value) || null,
+    waist_circumference_cm: parseFloat(document.getElementById("waist_circumference_cm").value) || null,
+    hip_circumference_cm: parseFloat(document.getElementById("hip_circumference_cm").value) || null,
+    gestational_age_weeks: parseInt(document.getElementById("gestational_age_weeks").value, 10) || 0,
     activity_factor: parseFloat(document.getElementById("activity_factor").value) || null,
     pathologies,
     other_pathologies_text: document.getElementById("other_pathologies_text").value.trim(),
@@ -664,10 +742,8 @@ async function generarPlan() { // Línea 590 en tu log
     other_diet_type_text: document.getElementById("other_diet_type_text").value.trim(),
     target_weight: parseFloat(document.getElementById("target_weight").value) || null,
     target_waist_cm: parseFloat(document.getElementById("target_waist_cm").value) || null,
-    target_protein_perc:
-      parseFloat(document.getElementById("target_protein_perc").value) || null,
-    target_carb_perc:
-      parseFloat(document.getElementById("target_carb_perc").value) || null,
+    target_protein_perc: parseFloat(document.getElementById("target_protein_perc").value) || null,
+    target_carb_perc: parseFloat(document.getElementById("target_carb_perc").value) || null,
     target_fat_perc: parseFloat(document.getElementById("target_fat_perc").value) || null,
     micronutrients,
     base_foods: baseFoodsForPayload,
@@ -675,15 +751,7 @@ async function generarPlan() { // Línea 590 en tu log
   };
 
   const required = [
-    "name",
-    "surname",
-    "cedula",
-    "dob",
-    "sex",
-    "height_cm",
-    "weight_at_plan",
-    "activity_factor",
-    "target_weight"
+    "name", "surname", "cedula", "dob", "sex", "height_cm", "weight_at_plan", "activity_factor", "target_weight"
   ];
   const missing = required.filter((f) => !planBaseData[f]);
   if (missing.length) {
@@ -691,10 +759,7 @@ async function generarPlan() { // Línea 590 en tu log
     return;
   }
 
-  const sum =
-    (planBaseData.target_protein_perc || 0) +
-    (planBaseData.target_carb_perc || 0) +
-    (planBaseData.target_fat_perc || 0);
+  const sum = (planBaseData.target_protein_perc || 0) + (planBaseData.target_carb_perc || 0) + (planBaseData.target_fat_perc || 0);
   if (sum > 0 && (sum < 98 || sum > 102)) {
     alert("La suma de macros debe ser ≈100% o todos en 0.");
     return;
@@ -706,98 +771,76 @@ async function generarPlan() { // Línea 590 en tu log
   textarea.disabled = true;
 
   try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("No autenticado. Por favor, inicie sesión.");
+    const token = await user.getIdToken();
+
     const resp = await fetch("/generar_plan", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        'Authorization': `Bearer ${token}`,
+        "X-CSRFToken": getCsrfToken()
+      },
       body: JSON.stringify(planBaseData)
     });
-    const res = await resp.json(); // 'res' es la respuesta JSON del backend
+    if (resp.status === 401) throw new Error('Sesión expirada. Por favor, inicie sesión de nuevo.');
+    const res = await resp.json();
     if (!resp.ok) throw new Error(res.error || `Error del servidor: ${resp.status}`);
     
-    console.log("INFO: Respuesta completa de /generar_plan (Flask):", JSON.parse(JSON.stringify(res))); 
-
     textarea.value = res.gemini_raw_text || "Error: plan inválido recibido del servidor.";
     currentPlanDataBaseData = res.plan_data_for_save;
-    console.log("INFO: currentPlanDataBaseData (que se usará para finalizar) después de /generar_plan:", JSON.parse(JSON.stringify(currentPlanDataBaseData)));
 
-    // --- Lógica para parsear y mostrar recetas para favoritear ---
     const fullPlanText = res.gemini_raw_text;
     const recipeSectionMarker = "== RECETARIO DETALLADO ==";
     const parts = fullPlanText.split(recipeSectionMarker);
     const recipesDetailedText = parts.length > 1 ? parts[1].trim() : "";
 
-    console.log("FRONTEND - Texto COMPLETO del recetario para parsear en JS:\n", recipesDetailedText);
-    console.log("FRONTEND - recipesDetailedText length:", recipesDetailedText.length);
-
     const recipesContainer = document.getElementById('favoriteRecipesContainer');
     const favoriteSelectionContainer = document.getElementById('favorite-recipes-selection-container');
-    
-    if (!recipesContainer || !favoriteSelectionContainer) {
-      console.error("Error: No se encontraron los contenedores 'favoriteRecipesContainer' o 'favorite-recipes-selection-container'. La funcionalidad de favoritear recetas no estará disponible.");
-    } else {
-        recipesContainer.innerHTML = ''; // Limpiar contenedor antes de añadir nuevos
+
+    if (recipesContainer && favoriteSelectionContainer) {
+        recipesContainer.innerHTML = '';
+        favoriteSelectionContainer.style.display = 'none';
 
         if (recipesDetailedText) {
-          const recipeMatches = [];
-          // Regex para dividir recipesDetailedText en bloques completos de recetas individuales
-          const recipeStartPattern = /\n?(Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*[\s\S]+?)(?=\nReceta\s*(?:N°|No\.|N\.)?\s*\d+:|$)/gi;
-          let match;
+            const recipeMatches = [];
+            const recipeStartPattern = /\n?(Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*[\s\S]+?)(?=\nReceta\s*(?:N°|No\.|N\.)?\s*\d+:|$)/gi;
+            let match;
 
-          while ((match = recipeStartPattern.exec(recipesDetailedText)) !== null) {
-            if (match[1]) { // match[1] es el grupo de captura que contiene el bloque completo de la receta.
-              recipeMatches.push(match[1].trim());
+            while ((match = recipeStartPattern.exec(recipesDetailedText)) !== null) {
+                if (match[1]) recipeMatches.push(match[1].trim());
             }
-          }
-          console.log("FRONTEND - Recetas individuales matcheadas por Regex:", recipeMatches);
-          console.log("FRONTEND - Número de recetas matcheadas:", recipeMatches.length);
 
-          if (recipeMatches.length > 0) {
-            favoriteSelectionContainer.style.display = 'block'; // Mostrar el contenedor de selección
-            recipeMatches.forEach((fullRecipeBlock, index) => {
-              let recipeTitle = null;
-              // Intento 1: Extraer título que no contenga saltos de línea, deteniéndose antes de "Rinde:" o "Porciones que Rinde:"
-              const titleMatchAttempt1 = fullRecipeBlock.match(/^(Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*[^\n]+?)(?=\s*\n\s*(?:Rinde:|Porciones que Rinde:)|$)/i);
-              if (titleMatchAttempt1 && titleMatchAttempt1[1]) {
-                recipeTitle = titleMatchAttempt1[1].trim();
-              } else {
-                // Intento 2 (Fallback): Tomar la primera línea que comience con "Receta..."
-                const titleMatchAttempt2 = fullRecipeBlock.match(/^(Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*[^\n]+)/i);
-                if (titleMatchAttempt2 && titleMatchAttempt2[0]) {
-                  recipeTitle = titleMatchAttempt2[0].trim();
-                }
-              }
-              console.log(`FRONTEND - Bloque ${index} - Título extraído: '${recipeTitle}' --- Del Bloque (primeros 200 chars): ${fullRecipeBlock.substring(0,200)}...`);
-              if (recipeTitle) {
-                const checkboxId = `fav_recipe_js_${index}`;
-                const div = document.createElement('div');
-                div.className = 'form-check mb-2';
-                div.innerHTML = `
-                  <input class="form-check-input" type="checkbox" value="${recipeTitle}" id="${checkboxId}" name="favorite_recipes_frontend">
-                  <label class="form-check-label" for="${checkboxId}">
-                    ${recipeTitle}
-                  </label>
-                `;
-                recipesContainer.appendChild(div);
-              } else {
-                console.warn("FRONTEND - No se pudo extraer un título válido para el bloque de receta:", fullRecipeBlock.substring(0, 200));
-              }
-            });
-          } else {
-            recipesContainer.innerHTML = '<p class="text-muted">No se encontraron recetas detalladas en el formato esperado para seleccionar.</p>';
-            favoriteSelectionContainer.style.display = 'none';
-            console.log("FRONTEND - No se encontraron bloques de recetas con el patrón global en recipesDetailedText.");
-          }
+            if (recipeMatches.length > 0) {
+                favoriteSelectionContainer.style.display = 'block';
+                recipeMatches.forEach((fullRecipeBlock, index) => {
+                    let recipeTitle = null;
+                    const titleMatchAttempt1 = fullRecipeBlock.match(/^(Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*[^\n]+?)(?=\s*\n\s*(?:Rinde:|Porciones que Rinde:)|$)/i);
+                    if (titleMatchAttempt1 && titleMatchAttempt1[1]) {
+                        recipeTitle = titleMatchAttempt1[1].trim();
+                    } else {
+                        const titleMatchAttempt2 = fullRecipeBlock.match(/^(Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*[^\n]+)/i);
+                        if (titleMatchAttempt2 && titleMatchAttempt2[0]) recipeTitle = titleMatchAttempt2[0].trim();
+                    }
+                    if (recipeTitle) {
+                        const checkboxId = `fav_recipe_js_${index}`;
+                        const div = document.createElement('div');
+                        div.className = 'form-check mb-2';
+                        div.innerHTML = `<input class="form-check-input" type="checkbox" value="${recipeTitle}" id="${checkboxId}" name="favorite_recipes_frontend"><label class="form-check-label" for="${checkboxId}">${recipeTitle}</label>`;
+                        recipesContainer.appendChild(div);
+                    }
+                });
+            } else {
+                recipesContainer.innerHTML = '<p class="text-muted">No se encontraron recetas detalladas en el formato esperado para seleccionar.</p>';
+                favoriteSelectionContainer.style.display = 'none';
+            }
         } else {
-          recipesContainer.innerHTML = '<p class="text-muted">La sección de recetas detalladas está vacía.</p>';
-          favoriteSelectionContainer.style.display = 'none';
-          console.log("FRONTEND - recipesDetailedText está vacío.");
+            recipesContainer.innerHTML = '<p class="text-muted">La sección de recetas detalladas está vacía o no se pudo parsear.</p>';
+            favoriteSelectionContainer.style.display = 'none';
         }
     }
-    // Fin de la lógica de parseo de recetas
-
   } catch (err) {
-    console.error("ERROR en generarPlan (fetch a /generar_plan o parseo de recetas):", err);
-    // Asegurarse de que textarea esté definido antes de intentar acceder a su valor
     if (textarea) textarea.value = `Error al generar el plan: ${err.message}`;
     showFinalMessage(`Error al generar el plan: ${err.message}`, "danger");
   } finally {
@@ -805,159 +848,345 @@ async function generarPlan() { // Línea 590 en tu log
   }
 }
 
-// Definir la variable watch aquí si es una lista estática de IDs
-// o asegurarse de que se defina antes de que main.js la use.
-const watch = ["height_cm", "weight_at_plan", "wrist_circumference_cm", "waist_circumference_cm", "hip_circumference_cm", "dob", "sex", "activity_factor"];
-
 async function finalizar() {
-  console.log("****** INICIO finalizar() ******");
-  hideFinalMessage();
+    console.log("****** INICIO finalizar() ******");
+    hideFinalMessage();
+    const planTextArea = document.getElementById("planTextArea");
+    const editedPlanText = planTextArea ? planTextArea.value : null;
+    if (!editedPlanText || editedPlanText.trim() === "") {
+        showFinalMessage("Error: El plan generado no puede estar vacío para guardar.", "danger");
+        return;
+    }
+    const form = document.getElementById('patient-plan-form');
+    const formData = new FormData(form);
+    const planData = Object.fromEntries(formData.entries());
+    planData.allergies = getList('allergies');
+    planData.intolerances = getList('intolerances');
+    planData.preferences = getList('preferences');
+    planData.aversions = getList('aversions');
+    planData.base_foods = getBaseFoodsFromDynamicSelects();
+    planData.pathologies = Array.from(document.querySelectorAll('input[name="pathologies"]:checked')).map(cb => cb.value);
+    planData.references = lastCalculatedReferences;
+    const payload = {
+        plan_data: planData,
+        edited_plan_text: editedPlanText,
+        user_observations: document.getElementById("user_observations")?.value || "",
+        selected_favorite_recipes: Array.from(document.querySelectorAll('input[name="favorite_recipes_frontend"]:checked')).map(cb => cb.value)
+    };
+    const loadedEvalId = document.getElementById("loaded_evaluation_id")?.value || null;
+    const endpoint = loadedEvalId ? `/actualizar_evaluacion/${loadedEvalId}` : "/guardar_evaluacion";
+    const method = loadedEvalId ? "PUT" : "POST";
+    const saveButton = document.getElementById('btn-finalizar');
+    if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Guardando...`;
+    }
+    try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("No autenticado. Por favor, inicie sesión.");
+        const token = await user.getIdToken();
 
-  const planTextArea = document.getElementById("planTextArea");
-  const editedPlanText = planTextArea ? planTextArea.value : null;
+        const response = await fetch(endpoint, {
+            method: method,
+            headers: {
+                "Content-Type": "application/json",
+                'Authorization': `Bearer ${token}`,
+                "X-CSRFToken": getCsrfToken()
+            },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `Error del servidor: ${response.status}`);
+        showFinalMessage(result.message, "success", false);
+        if (result.evaluation_id) {
+            document.getElementById("loaded_evaluation_id").value = result.evaluation_id;
+            setupActionButtons(result.evaluation_id);
+        }
+    } catch (error) {
+        console.error("ERROR en finalizar():", error);
+        showFinalMessage(`Error al guardar: ${error.message}`, "danger");
+    } finally {
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Evaluación y Archivos';
+        }
+    }
+}
 
-  if (!currentPlanDataBaseData) {
-    showFinalMessage("Error: No hay datos base del plan para guardar. Por favor, genera un plan primero.", "danger");
-    console.error("ERROR en finalizar(): currentPlanDataBaseData es null.");
-    return;
-  }
+async function handleLogin(event) {
+  event.preventDefault();
+  const email = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  const errorMessageDiv = document.getElementById('login-error-message');
+  const spinner = document.getElementById('login-spinner');
+  errorMessageDiv.classList.add('d-none');
+  if(spinner) spinner.classList.remove('d-none');
 
-  const favoriteRecipeCheckboxes = document.querySelectorAll('input[name="favorite_recipes_frontend"]:checked');
-  const selectedFavoriteRecipes = Array.from(favoriteRecipeCheckboxes).map(cb => cb.value);
-
-  const dataToSave = {
-    ...currentPlanDataBaseData,
-    edited_plan_text: editedPlanText,
-    user_observations: document.getElementById("user_observations")?.value || "",
-    selected_favorite_recipes: selectedFavoriteRecipes,
-    loaded_evaluation_id: document.getElementById("loaded_evaluation_id")?.value || null
-  };
-
-  console.log("INFO: Datos a enviar para finalizar/guardar:", JSON.parse(JSON.stringify(dataToSave)));
-
-  const saveButton = document.querySelector('button[onclick="finalizar()"]');
-  let originalButtonHtml = null;
-  if (saveButton) {
-     originalButtonHtml = saveButton.innerHTML;
-     saveButton.disabled = true;
-     saveButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Guardando...';
-  }
+  // Clear the auto-login attempt flag on manual login to reset the flow
+  sessionStorage.removeItem('autologin_attempted');
 
   try {
-    const endpoint = dataToSave.loaded_evaluation_id ? `/actualizar_evaluacion/${dataToSave.loaded_evaluation_id}` : "/guardar_evaluacion";
-    const method = dataToSave.loaded_evaluation_id ? "PUT" : "POST";
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    const idToken = await user.getIdToken();
 
-    const response = await fetch(endpoint, {
-      method: method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(dataToSave)
-    });
+    const form = document.createElement('form');
+    form.method = 'POST';
+    // FIX: Ensure the 'next' parameter is passed along for correct redirection after login
+    const nextUrl = new URLSearchParams(window.location.search).get('next');
+    form.action = nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : '/login';
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || `Error del servidor: ${response.status}`);
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
     }
 
-    showFinalMessage(result.message || "Plan guardado exitosamente.", "success");
-    console.log("INFO: Respuesta de guardar_evaluacion:", result);
+    const tokenInput = document.createElement('input');
+    tokenInput.type = 'hidden';
+    tokenInput.name = 'idToken';
+    tokenInput.value = idToken;
+    form.appendChild(tokenInput);
 
-    if (result.evaluation_id) {
-      currentEvaluationId = result.evaluation_id;
-      document.getElementById("loaded_evaluation_id").value = result.evaluation_id;
-      setupTechnicalPdfButton(result.evaluation_id);
-      setupPatientPdfButton(result.evaluation_id);
-    }
+    document.body.appendChild(form);
+    form.submit();
 
   } catch (error) {
-    console.error("ERROR en finalizar():", error);
-    showFinalMessage(`Error al guardar el plan: ${error.message}`, "danger");
+    let friendlyMessage = "Correo electrónico o contraseña incorrectos.";
+    if (error.code === 'auth/invalid-email') friendlyMessage = "El formato del correo es inválido.";
+    errorMessageDiv.textContent = friendlyMessage;
+    errorMessageDiv.classList.remove('d-none');
+    console.error("Firebase Login Error:", error);
   } finally {
-     if (saveButton) {
-         saveButton.disabled = false;
-         saveButton.innerHTML = originalButtonHtml || "Guardar Plan";
-     }
+    if(spinner) spinner.classList.add('d-none');
   }
 }
 
-// ────────────────────────────────────────────────────────
-// Listener DOMContentLoaded
-// ────────────────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", () => {
+async function handleRegister(event) {
+  event.preventDefault();
+  const email = document.getElementById('register-email').value;
+  const password = document.getElementById('register-password').value;
+  const name = document.getElementById('register-name').value;
+  const errorMessageDiv = document.getElementById('register-error-message');
+  const spinner = document.getElementById('register-spinner');
 
-  function validateClientSideField(inputElement) {
-    if (!inputElement || inputElement.type !== 'number') return true;
-    const fieldLabel = (inputElement.labels && inputElement.labels.length > 0
-      ? inputElement.labels[0].textContent.replace(':', '').trim()
-      : null) || inputElement.name || inputElement.id;
-    const valueStr = inputElement.value.trim();
-    if (valueStr === "") return true;
-    const value = parseFloat(valueStr);
-    if (isNaN(value)) {
-      displayValidationErrorInForm(`El valor para '${fieldLabel}' debe ser un número.`);
-      return false;
+  if(errorMessageDiv) errorMessageDiv.classList.add('d-none');
+  if (spinner) spinner.style.display = 'inline-block';
+
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    if (name) {
+      await updateProfile(user, { displayName: name });
     }
-    const min = parseFloat(inputElement.min), max = parseFloat(inputElement.max);
-    if (!isNaN(min) && value < min) {
-      displayValidationErrorInForm(`El valor para '${fieldLabel}' (${value}) no puede ser menor que ${min}.`);
-      return false;
+
+    const idToken = await user.getIdToken();
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/login';
+
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
     }
-    if (!isNaN(max) && value > max) {
-      displayValidationErrorInForm(`El valor para '${fieldLabel}' (${value}) no puede ser mayor que ${max}.`);
-      return false;
+
+    const tokenInput = document.createElement('input');
+    tokenInput.type = 'hidden';
+    tokenInput.name = 'idToken';
+    tokenInput.value = idToken;
+    form.appendChild(tokenInput);
+
+    document.body.appendChild(form);
+    form.submit();
+
+  } catch (error) {
+    console.error("Firebase Registration Error:", error);
+    let friendlyMessage = "Error al crear la cuenta. Inténtalo de nuevo.";
+    if (error.code === 'auth/email-already-in-use') friendlyMessage = "Este correo ya está registrado.";
+    else if (error.code === 'auth/weak-password') friendlyMessage = "La contraseña debe tener al menos 6 caracteres.";
+    else if (error.code === 'auth/invalid-email') friendlyMessage = "El formato del correo electrónico es inválido.";
+    if(errorMessageDiv) {
+        errorMessageDiv.textContent = friendlyMessage;
+        errorMessageDiv.classList.remove('d-none');
+        errorMessageDiv.style.display = 'block';
     }
-    return true;
+  } finally {
+    if (spinner) spinner.style.display = 'none';
   }
+}
 
-  // Asumiendo que 'watch' es un array de IDs definido globalmente o en un scope accesible.
-  // Si 'watch' no está definido, esta parte podría causar un error.
-  // if (typeof watch !== 'undefined' && Array.isArray(watch)) { // Comentado si watch se define arriba
-  if (typeof watch !== 'undefined' && Array.isArray(watch)) { // Se restaura la condición para evitar errores si watch no está lista
-    watch.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener("change", e => { validateClientSideField(e.target); calcularValores(e); });
+async function handleLogout(event) {
+  event.preventDefault();
+  try {
+    sessionStorage.removeItem('autologin_attempted'); // Clear the flag on logout
+    await signOut(auth);
+    window.location.href = '/logout';
+  } catch (error) {
+    sessionStorage.removeItem('autologin_attempted'); // Also clear on error
+    console.error("Logout Error:", error);
+    window.location.href = '/logout';
+  }
+}
+
+// --- Base Foods Dynamic Rows ---
+function addBaseFoodRow(foodName = '') {
+    const container = document.getElementById('base-foods-container');
+    if (!container) {
+        console.error("Container 'base-foods-container' not found.");
+        return;
+    }
+
+    const row = document.createElement('div');
+    row.classList.add('input-group', 'input-group-sm', 'mb-2', 'base-food-row');
+
+    const select = document.createElement('select');
+    select.classList.add('form-select', 'base-food-select');
+    select.name = 'base_foods';
+
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = 'Seleccionar alimento...';
+    select.appendChild(defaultOption);
+
+    if (window.allIngredientsData && Array.isArray(window.allIngredientsData)) {
+        window.allIngredientsData.forEach(ingredient => {
+            const option = document.createElement('option');
+            option.value = ingredient.name;
+            option.textContent = ingredient.name;
+            if (ingredient.name === foodName) { option.selected = true; }
+            select.appendChild(option);
+        });
+    }
+
+    const removeButton = document.createElement('button');
+    removeButton.classList.add('btn', 'btn-outline-danger');
+    removeButton.type = 'button';
+    removeButton.innerHTML = '<i class="fas fa-trash"></i>';
+    removeButton.onclick = () => row.remove();
+
+    row.appendChild(select);
+    row.appendChild(removeButton);
+    container.appendChild(row);
+}
+
+function getBaseFoodsFromDynamicSelects() {
+    const baseFoods = [];
+    const selectElements = document.querySelectorAll('#base-foods-container .base-food-select');
+    selectElements.forEach(select => {
+        if (select.value && select.value.trim() !== '') {
+            baseFoods.push(select.value.trim());
+        }
     });
-  } else {
-    console.warn("WARN: La variable 'watch' no está definida o no es un array. Los listeners de cambio para calcularValores no se configurarán.");
-  }
-  // } // Comentado si watch se define arriba
-  const otherNumericFieldsToValidate = [
-    "gestational_age_weeks","target_weight","target_waist_cm",
-    "target_protein_perc","target_carb_perc","target_fat_perc",
-    "mic_k","mic_ca","mic_na","mic_chol"
-  ];
-  otherNumericFieldsToValidate.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("change", e => validateClientSideField(e.target));
-  });
+    return baseFoods;
+}
 
-  const btnSearch = document.getElementById("btn-search");
-  if (btnSearch) btnSearch.addEventListener("click", buscarPaciente);
-  const btnClear = document.getElementById("btn-clear");
-  if (btnClear) btnClear.addEventListener("click", () => clearFormAndSearch(false));
-  const btnLoadRelevantPreps = document.getElementById("btn-load-relevant-preparations");
-  if (btnLoadRelevantPreps) btnLoadRelevantPreps.addEventListener("click", loadRelevantPreparationsForPatient);
-  const btnGenerarPlanIA = document.getElementById("btn-generar-plan");
-  if (btnGenerarPlanIA) btnGenerarPlanIA.addEventListener("click", generarPlan);
+// --- DOMContentLoaded Listener ---
+document.addEventListener("DOMContentLoaded", () => {
+    console.log("DEBUG_UI: DOMContentLoaded - Evento disparado.");
 
-  const tagifyElements = [
-    { selector: 'input[name="allergies"]', id: 'allergies' },
-    { selector: 'input[name="intolerances"]', id: 'intolerances' },
-    { selector: 'input[name="preferences"]', id: 'preferences' },
-    { selector: 'input[name="aversions"]', id: 'aversions' },
-    { selector: 'input[name="base_foods"]', id: 'base_foods' }
-  ];
-  window.tagifyInstances = window.tagifyInstances || {};
-  tagifyElements.forEach(item => {
-    const input = document.querySelector(item.selector);
-    if (input) {
-      try {
-        window.tagifyInstances[item.id] = new Tagify(input);
-      } catch (e) {
-        console.error(`Falló la inicialización de Tagify para ${item.id}:`, e);
-      }
+    // The single, central auth state listener
+    onAuthStateChanged(auth, handleAuthStateChange);
+
+    // Event listeners for nutritionist forms
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    
+    const registerForm = document.getElementById('register-form');
+    if (registerForm) registerForm.addEventListener('submit', handleRegister);
+
+    const profileForm = document.getElementById('profile-form');
+    if (profileForm) profileForm.addEventListener('submit', handleProfileUpdate);
+    
+    const logoutLink = document.getElementById('logout-link');
+    if (logoutLink) logoutLink.addEventListener('click', handleLogout);
+
+    if (document.getElementById('patient-plan-form')) {
+        console.log("Formulario de Evaluación: DOMContentLoaded disparado.");
+        const tagifyElements = [
+            { selector: 'input[name="allergies"]', id: 'allergies' },
+            { selector: 'input[name="intolerances"]', id: 'intolerances' },
+            { selector: 'input[name="preferences"]', id: 'preferences' },
+            { selector: 'input[name="aversions"]', id: 'aversions' }
+        ];
+        window.tagifyInstances = {};
+        tagifyElements.forEach(item => {
+            const input = document.querySelector(item.selector);
+            if (input) {
+                try { window.tagifyInstances[item.id] = new Tagify(input); }
+                catch (e) { console.error(`Falló Tagify para ${item.id}:`, e); }
+            }
+        });
+
+        const serverContextAction = window.serverContextAction;
+        const serverContextEvaluationData = window.serverContextEvaluationData;
+        
+        if ((serverContextAction === 'edit_evaluation' || serverContextAction === 'load_eval_for_new') && serverContextEvaluationData) {
+            console.log("Formulario de Evaluación: Modo EDICIÓN con datos del servidor.");
+            populatePreloadForm(serverContextEvaluationData, 'edit_evaluation');
+            const saveButton = document.getElementById('btn-finalizar');
+            if (saveButton) saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cambios';
+        } else {
+            console.log("Formulario de Evaluación: Modo NUEVO.");
+            if (document.getElementById('base-foods-container')) {
+                addBaseFoodRow();
+            }
+        }
+
+        const watch = ["height_cm", "weight_at_plan", "wrist_circumference_cm", "waist_circumference_cm", "hip_circumference_cm", "dob", "sex", "activity_factor"];
+        watch.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener("change", calcularValores);
+        });
+
+        const btnLoadRelevantPreps = document.getElementById("btn-load-relevant-preparations");
+        if (btnLoadRelevantPreps) btnLoadRelevantPreps.addEventListener("click", loadRelevantPreparationsForPatient);
+
+        const btnGenerarPlanIA = document.getElementById("btn-generar-plan");
+        if (btnGenerarPlanIA) btnGenerarPlanIA.addEventListener("click", generarPlan);
+
+        const finalizarButton = document.getElementById('btn-finalizar');
+        if (finalizarButton) finalizarButton.addEventListener('click', finalizar);
     }
-  });
 
-  clearFormAndSearch(true);
+    const btnAddBaseFood = document.getElementById('btn-add-base-food');
+    if (btnAddBaseFood) {
+        btnAddBaseFood.addEventListener('click', () => addBaseFoodRow());
+    }
+
+    const dashboardContainer = document.getElementById('patientSearchResultsDashboard');
+    if (dashboardContainer) {
+        initializeDashboard();
+    }
+
+    const profileCountrySelect = document.getElementById('profile-country');
+    const profilePhoneCodeSelect = document.getElementById('profile-phone-code');
+    console.log("DEBUG: Checking for profileCountrySelect and profilePhoneCodeSelect elements.");
+    if (profileCountrySelect && profilePhoneCodeSelect) {
+        console.log("DEBUG: Profile country and phone code selects found. Attaching event listener.");
+        profileCountrySelect.addEventListener('change', () => {
+            console.log("DEBUG: Country select changed!");
+            const selectedOption = profileCountrySelect.options[profileCountrySelect.selectedIndex];
+            const phoneCode = selectedOption.dataset.phoneCode;
+            console.log("DEBUG: Selected country option value:", selectedOption.value);
+            console.log("DEBUG: Extracted phoneCode from dataset:", phoneCode);
+            if (phoneCode) {
+                profilePhoneCodeSelect.value = phoneCode;
+                console.log("DEBUG: Phone code select value set to:", profilePhoneCodeSelect.value);
+            } else {
+                profilePhoneCodeSelect.value = '';
+                console.log("DEBUG: No phone code found in dataset, clearing phone code select.");
+            }
+        });
+    }
 });
+
+console.log("DEBUG_UI: main.js loaded.");

@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+
   <title>{% block title %}NutriApp{% endblock %}</title>
 
   <!-- Bootstrap CSS -->
@@ -12,7 +14,7 @@
         crossorigin="anonymous">
 
   <!-- Font Awesome -->
-  <link rel="stylesheet"
+ <link rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
         integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A=="
         crossorigin="anonymous"
@@ -46,11 +48,24 @@
           <li class="nav-item">
             <a class="nav-link {% if request.endpoint == 'mis_preparaciones_view' %}active{% endif %}" href="{{ url_for('mis_preparaciones_view') }}"><i class="fas fa-utensils"></i> Mis Preparaciones</a>
           </li>
+           <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'mis_ingredientes_view' %}active{% endif %}" href="{{ url_for('mis_ingredientes_view') }}"><i class="fas fa-carrot"></i> Mis Ingredientes</a>
+          </li>
           <li class="nav-item">
             <a class="nav-link {% if request.endpoint == 'formulario_evaluacion' %}active{% endif %}" href="{{ url_for('formulario_evaluacion') }}"><i class="fas fa-file-alt"></i> Nueva Evaluación</a>
           </li>
           <!-- Más enlaces si son necesarios -->
-        </ul>
+          <li class="nav-item" id="register-container">
+            <a class="nav-link" href="{{ url_for('register_page') }}" id="register-link" style="display: none;"><i class="fas fa-user-plus"></i> Registrarse</a>
+          </li>
+          <li class="nav-item" id="profile-container">
+            <a class="nav-link" href="{{ url_for('profile_page') }}" id="profile-link" style="display: none;"><i class="fas fa-user-circle"></i> Mi Perfil</a>
+          </li>
+          <li class="nav-item" id="auth-container">
+            <a class="nav-link" href="{{ url_for('login_page') }}" id="login-link" style="display: none;"><i class="fas fa-sign-in-alt"></i> Iniciar Sesión</a>
+            <a class="nav-link" href="#" id="logout-link" style="display: none;"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</a>
+          </li>
+         </ul>
       </div>
     </div>
   </nav>
@@ -85,10 +100,22 @@
   
   <!-- Tagify JS -->
   <script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify"></script>
+  <script>
+    // Firebase configuration (made global for main.js module)
+    window.firebaseConfig = {
+      apiKey: "{{ config.FIREBASE_API_KEY }}",
+      authDomain: "{{ config.FIREBASE_AUTH_DOMAIN }}",
+      projectId: "{{ config.FIREBASE_PROJECT_ID }}",
+      // Añade storageBucket, messagingSenderId y appId si los necesitas
+      // storageBucket: "{{ config.FIREBASE_STORAGE_BUCKET }}",
+      // messagingSenderId: "{{ config.FIREBASE_MESSAGING_SENDER_ID }}",
+      // appId: "{{ config.FIREBASE_APP_ID }}"
+    };
+  </script>
 
   <!-- Tu JavaScript principal -->
-  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-  
+  <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+
   {% block scripts %}
   <!-- Aquí puedes añadir scripts adicionales desde las vistas -->
   {% endblock %}

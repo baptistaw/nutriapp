@@ -120,7 +120,12 @@ equivalences_data = [
     {"ingredient_name": "Sal, de mesa, yodada",                            "household_unit": "taza",               "grams_per_unit": 292.0},
     {"ingredient_name": "Jugo de naranja, fresco",                         "household_unit": "taza",               "grams_per_unit": 248.0},
     {"ingredient_name": "Jugo de limón, fresco",                           "household_unit": "cucharada sopera",   "grams_per_unit": 15.0},
-    {"ingredient_name": "Jugo de limón, fresco",                           "household_unit": "unidad mediana",     "grams_per_unit": 65.0}
+    {"ingredient_name": "Jugo de limón, fresco",                           "household_unit": "unidad mediana",     "grams_per_unit": 65.0},
+    {"ingredient_name": "Vinagre de vino tinto",                           "household_unit": "cucharadita de té",  "grams_per_unit": 5.0}, # Asumiendo densidad ~1g/ml
+    # En populate_equivalences.py, dentro de equivalences_data = [ ... ]
+    {"ingredient_name": "Aceite de oliva Cocinero", "household_unit": "ml", "grams_per_unit": 0.92}, 
+    # Opcional, pero bueno tenerla si la IA la sugiere:
+    {"ingredient_name": "Aceite de oliva Cocinero", "household_unit": "cucharada sopera", "grams_per_unit": 13.8}, # Asumiendo 1 cda = 15ml; 15ml * 0.92g/ml = 13.8g
 ]
 # ---------------------------------------------------------------------------
 
@@ -182,5 +187,3 @@ def populate_equivalences():
 if __name__ == '__main__':
     populate_equivalences()
     print("\nScript de población de equivalencias finalizado.")
-
-

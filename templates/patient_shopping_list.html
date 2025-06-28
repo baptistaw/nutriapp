@@ -1,0 +1,49 @@
+{% extends 'base.html' %} <!-- Corregido para usar la plantilla base común -->
+
+{% block title %}Lista de Compras - {{ patient.name }} {{ patient.surname }}{% endblock %}
+{% block content %} <!-- Nombre del bloque corregido para coincidir con base.html -->
+<div class="container mt-4">
+    <div class="card shadow-sm">
+        <div class="card-header bg-success text-white">
+            <h4 class="mb-0"><i class="fas fa-shopping-cart"></i> Lista de Compras del Plan</h4>
+        </div>
+        <div class="card-body">
+            {% if evaluation %}
+                <p class="text-muted">Para la evaluación del: {{ evaluation.consultation_date.strftime('%d/%m/%Y') }}</p>
+            {% endif %}
+
+            {% if shopping_list_items %}
+                <ul class="list-group list-group-flush">
+                    {% for item_name, units_data in shopping_list_items.items() %}
+                        <li class="list-group-item">
+                            <strong class="text-primary">{{ item_name | capitalize }}</strong>
+                            <ul class="list-unstyled ms-3 mt-1">
+                                {% for unit, total_quantity in units_data.items() %}
+                                    <li>
+                                        <i class="fas fa-caret-right text-secondary me-1"></i>
+                                        {{ "%.2f"|format(total_quantity) if total_quantity is not none and total_quantity % 1 != 0 else total_quantity|int }} {{ unit }}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="alert alert-info mt-3" role="alert">
+                    <i class="fas fa-info-circle"></i> No hay ingredientes en las recetas del plan para generar una lista de compras, o el plan no contiene un recetario detallado.
+                </div>
+            {% endif %}
+        </div>
+        <div class="card-footer text-center">
+            <a href="{{ url_for('patient_dashboard', patient_id=patient.id) }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Volver al Dashboard
+            </a>
+            {% if evaluation %}
+            <a href="{{ url_for('patient_plan', patient_id=patient.id, evaluation_id=evaluation.id) }}" class="btn btn-outline-primary btn-sm ms-2">
+                <i class="fas fa-utensils"></i> Ver Plan Detallado
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

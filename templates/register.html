@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{% block title %}Registro - NutriApp{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card shadow-lg border-0 rounded-lg mt-5">
+        <div class="card-header bg-primary text-center">
+          <h3 class="text-white my-2"><i class="fas fa-user-plus"></i> Crear Cuenta</h3>
+        </div>
+        <div class="card-body p-4">
+          <form id="register-form">
+            <div class="mb-3">
+              <label for="register-email" class="form-label">Email:</label>
+              <input type="email" id="register-email" class="form-control" placeholder="ejemplo@dominio.com" required>
+            </div>
+            <div class="mb-3">
+              <label for="register-password" class="form-label">Contraseña:</label>
+              <input type="password" id="register-password" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label for="register-name" class="form-label">Nombre (Opcional):</label>
+              <input type="text" id="register-name" class="form-control" placeholder="Tu nombre">
+            </div>
+            <div class="d-flex align-items-center justify-content-between mt-4 mb-0">
+              <a class="small" href="{{ url_for('login_page') }}">¿Ya tienes una cuenta? Inicia sesión</a>
+              <button type="submit" class="btn btn-primary">
+                <span id="register-spinner" class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" style="display: none;"></span>
+                Crear Cuenta
+              </button>
+            </div>
+            <div id="register-error-message" class="alert alert-danger mt-3" style="display: none;"></div>
+          </form>
+        </div>
+        <div class="card-footer text-center py-3">
+          <div class="small">
+            &copy; {{ now.year }} NutriApp
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}{% endblock %}

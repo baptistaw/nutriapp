@@ -1,21 +1,9 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard de Pacientes - NutriApp</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% extends 'base.html' %}
+{% block title %}Dashboard de Pacientes - NutriApp{% endblock %}
+
+{% block styles %}
+    {{ super() }}
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8f9fa;
-        }
-        .navbar-brand {
-            font-weight: bold;
-            color: #0d6efd !important;
-        }
         .container-dashboard {
             max-width: 900px;
             margin-top: 20px;
@@ -53,27 +41,13 @@
             border-color: #0d6efd;
         }
     </style>
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('pacientes_dashboard') }}">NutriApp Dashboard</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="btn btn-primary" href="{{ url_for('formulario_evaluacion') }}"><i class="fas fa-user-plus"></i> Nueva Evaluación (Nuevo Paciente)</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+{% endblock %}
 
+{% block content %}
     <div class="container container-dashboard">
-        <h2 class="mb-4 text-primary">Gestión de Pacientes</h2>
-
+        <h2 class="mb-4">Gestión de Pacientes</h2>
+        <p class="lead text-muted" id="welcome-message">Bienvenido/a.</p>
+        <hr>
         <div class="row mb-3">
             <div class="col-md-12">
                 <form id="searchPatientFormDashboard">
@@ -87,75 +61,11 @@
 
         <div id="patientSearchResultsDashboard" class="search-results-container">
             <!-- Los resultados de la búsqueda se insertarán aquí -->
-            <p class="text-muted text-center" id="dashboardMessage">Cargando pacientes...</p>
+            <!-- El mensaje de carga inicial será gestionado por JavaScript -->
         </div>
     </div>
+{% endblock %}
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        const resultsContainer = document.getElementById('patientSearchResultsDashboard');
-        const dashboardMessage = document.getElementById('dashboardMessage');
-
-        function displayPatients(patientsList) {
-            resultsContainer.innerHTML = ''; // Limpiar resultados anteriores o mensaje inicial
-            if (patientsList && patientsList.length > 0) {
-                patientsList.forEach(patient => {
-                    // Usamos el mismo formato de tarjeta que en la búsqueda
-                    resultsContainer.innerHTML += `
-                        <div class="patient-card">
-                            <h5>${patient.name} ${patient.surname}</h5>
-                            <p>C.I.: ${patient.cedula}</p>
-                            <a href="/paciente/${patient.id}/historial" class="btn btn-sm btn-outline-primary mt-2">
-                                <i class="fas fa-history"></i> Ver Historial
-                            </a>
-                        </div>`;
-                });
-            } else {
-                resultsContainer.innerHTML = '<p class="text-center text-danger">No se encontraron pacientes.</p>';
-            }
-        }
-
-        document.getElementById('searchPatientFormDashboard').addEventListener('submit', function(event) {
-            event.preventDefault();
-            const query = document.getElementById('searchQueryDashboard').value;
-            const resultsContainer = document.getElementById('patientSearchResultsDashboard');
-            resultsContainer.innerHTML = '<p class="text-center">Buscando...</p>';
-
-            fetch("{{ url_for('buscar_paciente') }}", {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: new URLSearchParams({search_query: query})
-            })
-            .then(response => response.json())
-            .then(data => {
-                // La respuesta de buscar_paciente tiene 'item.patient'
-                const patientsToDisplay = data.results ? data.results.map(item => item.patient) : [];
-                displayPatients(patientsToDisplay);
-            })
-            .catch(error => {
-                console.error('Error en búsqueda:', error);
-                resultsContainer.innerHTML = '<p class="text-center text-danger">Error al buscar pacientes.</p>';
-            });
-        });
-
-        // Cargar todos los pacientes al iniciar la página
-        document.addEventListener('DOMContentLoaded', function() {
-            fetch("{{ url_for('get_all_patients') }}")
-            .then(response => response.json())
-            .then(data => {
-                if (data.results) {
-                    displayPatients(data.results);
-                } else if (data.error) {
-                    dashboardMessage.textContent = data.error;
-                    dashboardMessage.className = 'text-center text-danger';
-                }
-            })
-            .catch(error => {
-                console.error('Error al cargar todos los pacientes:', error);
-                dashboardMessage.textContent = 'Error al cargar la lista de pacientes.';
-                dashboardMessage.className = 'text-center text-danger';
-            });
-        });
-    </script>
-</body>
-</html>
+{% block scripts %}
+    {{ super() }}
+{% endblock %}
