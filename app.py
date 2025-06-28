@@ -2312,6 +2312,11 @@ def formulario_evaluacion():
 @app.route('/login')
 def login_page():
     return render_template('login.html')
+
+# Route for registration page
+@app.route('/register')
+def register_page():
+    return render_template('register.html')
 # En app.py, añade esta nueva ruta:
 
 @app.route('/api/preparations', methods=['POST'])
