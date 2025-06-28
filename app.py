@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import firebase_admin
 import traceback
 import smtplib
 from datetime import datetime, timezone # Asegurar timezone importado
@@ -9,13 +10,16 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 import math
+from functools import wraps
 
 from flask import (
     Flask, request, render_template, redirect, url_for,
-    session, flash, jsonify, send_file, abort
+    session, flash, jsonify, send_file, abort, g
 )
 # Asumiendo Flask-Login se usará más adelante para el usuario
-# from flask_login import LoginManager, UserMixin, login_required, current_user
+from flask_login import LoginManager, UserMixin, login_required, current_user, login_user, logout_user
+from flask_wtf.csrf import CSRFProtect
+from firebase_admin import credentials, auth
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 
@@ -42,10 +46,11 @@ import logging # Import logging module
 app = Flask(__name__)
 app.config.from_object(Config)
 db = SQLAlchemy(app)
+csrf = CSRFProtect(app)
 migrate = Migrate(app, db)
-# login_manager = LoginManager() # Configurar más adelante
-# login_manager.init_app(app)
-# login_manager.login_view = 'login' # Ruta de login (a crear)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login_page'
 
 # Explicitly set logger level for debugging
 app.logger.setLevel(logging.DEBUG)
@@ -54,10 +59,19 @@ app.logger.info("Flask logger level set to DEBUG.") # Test log
 # --- Configuración APIs ---
 try:
     if app.config['GEMINI_API_KEY']:
-        genai.configure(api_key=app.config['GEMINI_API_KEY'])
-        print("INFO: API Key de Gemini configurada.")
+        genai.configure(api_key=app.config['GEMINI_API_KEY']) # type: ignore
+        app.logger.info("INFO: API Key de Gemini configurada.")
     else:
-        print("ADVERTENCIA: GEMINI_API_KEY no configurada en el archivo .env.")
+        app.logger.warning("ADVERTENCIA: GEMINI_API_KEY no configurada en el archivo .env.")
+    
+    # Firebase Admin SDK Initialization
+    cred_path = os.path.join(os.path.dirname(__file__), 'firebase-adminsdk.json')
+    if os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+        app.logger.info("INFO: Firebase Admin SDK inicializado desde archivo local 'firebase-adminsdk.json'.")
+    else:
+        app.logger.warning("ADVERTENCIA: Archivo 'firebase-adminsdk.json' no encontrado. La autenticación de API podría fallar.")
 except Exception as config_error:
      print(f"ERROR: Configurando API de Gemini: {config_error}")
 
@@ -75,25 +89,42 @@ def inject_now():
 
 # --- Modelos de Base de Datos (SQLAlchemy) ---
 
-# Modelo User (Básico para futura implementación de login)
-# class User(UserMixin, db.Model):
-#     id = db.Column(db.Integer, primary_key=True)
-#     username = db.Column(db.String(64), index=True, unique=True)
-#     email = db.Column(db.String(120), index=True, unique=True)
-#     password_hash = db.Column(db.String(128))
-#     # Relación con las evaluaciones que creó
-#     evaluations = db.relationship('Evaluation', backref='author', lazy='dynamic')
-#
-#     def set_password(self, password):
-#         # Implementar hashing de contraseña (ej. werkzeug.security)
-#         pass
-#     def check_password(self, password):
-#         # Implementar verificación de hash
-#         pass
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    firebase_uid = db.Column(db.String(128), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    name = db.Column(db.String(100))
+    surname = db.Column(db.String(100))
+    profession = db.Column(db.String(100))
+    license_number = db.Column(db.String(50))
+    city = db.Column(db.String(100))
+    country = db.Column(db.String(100))
+    address = db.Column(db.String(200))
+    phone_number = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    patients = db.relationship('Patient', backref='nutritionist', lazy=True)
+    preparations = db.relationship('UserPreparation', backref='user', lazy=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'firebase_uid': self.firebase_uid,
+            'email': self.email,
+            'name': self.name,
+            'surname': self.surname,
+            'profession': self.profession,
+            'license_number': self.license_number,
+            'city': self.city,
+            'country': self.country,
+            'address': self.address,
+            'phone_number': self.phone_number,
+        }
 
 # Modelo Patient (Datos relativamente estables)
 class Patient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     # Identificación y Datos Filiatorios
     name = db.Column(db.String(80), nullable=False)
     surname = db.Column(db.String(80), nullable=False)
@@ -176,7 +207,7 @@ class ChatMessage(db.Model):
 class Evaluation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     patient_id = db.Column(db.Integer, db.ForeignKey('patient.id'), nullable=False, index=True)
-    # user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True) # Para login futuro
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
     consultation_date = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc))
 
     # Snapshot de Antropometría en esta evaluación
@@ -297,8 +328,8 @@ class Ingredient(db.Model):
     name = db.Column(db.String(255), nullable=False, unique=True, index=True)
     # Podrías añadir campos como common_unit, category, etc.
 
-    # Relación con los datos nutricionales de este ingrediente
-    nutrients = db.relationship('IngredientNutrient', backref='ingredient', lazy=True)
+    # Relación con los datos nutricionales de este ingrediente (lazy='dynamic' es crucial)
+    nutrients = db.relationship('IngredientNutrient', backref='ingredient', lazy='dynamic')
     # Relación con las equivalencias de unidades caseras
     equivalences = db.relationship('UnitEquivalence', backref='ingredient', lazy=True)
 
@@ -310,6 +341,23 @@ class Ingredient(db.Model):
             return []
     def set_synonyms(self, synonym_list):
         self.synonyms_json = json.dumps([str(s).strip() for s in synonym_list if str(s).strip()])
+
+    def to_dict(self):
+        nutri_data = self.nutrients.filter_by(reference_quantity=100.0, reference_unit='g').first()
+        if not nutri_data:
+            nutri_data = self.nutrients.first()
+
+        return {
+            'id': self.id,
+            'name': self.name,
+            'synonyms': self.get_synonyms(),
+            'nutrients': {
+                'calories': nutri_data.calories if nutri_data else None,
+                'protein_g': nutri_data.protein_g if nutri_data else None,
+                'carb_g': nutri_data.carb_g if nutri_data else None,
+                'fat_g': nutri_data.fat_g if nutri_data else None,
+            } if nutri_data else {}
+        }
 
     def __repr__(self):
         return f'<Ingredient {self.id}: {self.name}>'
@@ -339,7 +387,7 @@ class IngredientNutrient(db.Model):
 class UserPreparation(db.Model):
     __tablename__ = 'user_preparation'
     id = db.Column(db.Integer, primary_key=True)
-    # user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # Descomentar si tienes tabla User
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     ingredients_json = db.Column(db.Text, nullable=False, default='[]') # JSON string de ingredientes
@@ -359,7 +407,7 @@ class UserPreparation(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    # user = db.relationship('User', backref=db.backref('preparations', lazy=True)) # Descomentar si tienes User
+    user = db.relationship('User', backref=db.backref('user_preparations', lazy=True))
 
     def set_ingredients(self, ingredients_list):
         self.ingredients_json = json.dumps(ingredients_list)
@@ -394,7 +442,7 @@ class UserPreparation(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            # 'user_id': self.user_id,
+            'user_id': self.user_id,
             'name': self.name,
             'description': self.description,
             'ingredients': self.get_ingredients(),
@@ -4132,3 +4180,369 @@ def get_relevant_preparations_for_patient():
     
     app.logger.info(f"Encontradas {len(relevant_preparations)} preparaciones relevantes. Omitidas por restricción: {skipped_due_to_restriction_count}.")
     return jsonify(relevant_preparations), 200
+
+# --- API para Perfil de Usuario ---
+
+@app.route('/profile')
+@login_required
+def profile_page():
+    return render_template('profile.html', countries=app.config['COUNTRIES'], professions=app.config['PROFESSIONS'])
+
+@app.route('/api/user_info', methods=['GET'])
+@firebase_auth_required
+def get_user_info():
+    user = g.user
+    app.logger.info(f"API /api/user_info: Devolviendo info para usuario ID: {user.id} ({user.email})")
+    return jsonify(user.to_dict())
+
+@app.route('/api/user/profile', methods=['PUT'])
+@firebase_auth_required
+def update_user_profile():
+    user = g.user
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No se recibieron datos.'}), 400
+
+    try:
+        user.name = data.get('name', user.name)
+        user.surname = data.get('surname', user.surname)
+        user.profession = data.get('profession', user.profession)
+        user.license_number = data.get('license_number', user.license_number)
+        user.city = data.get('city', user.city)
+        user.country = data.get('country', user.country)
+        user.address = data.get('address', user.address)
+        user.phone_number = data.get('phone_number', user.phone_number)
+        
+        db.session.commit()
+        app.logger.info(f"Perfil del usuario ID {user.id} actualizado.")
+        return jsonify({'message': 'Perfil actualizado correctamente.'}), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error al actualizar perfil del usuario ID {user.id}: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno al actualizar el perfil.'}), 500
+
+# --- API para Ingredientes ---
+
+@app.route('/mis_ingredientes')
+@login_required
+def mis_ingredientes_view():
+    return render_template('mis_ingredientes.html')
+
+@app.route('/api/ingredients', methods=['GET'])
+@firebase_auth_required
+def get_ingredients():
+    ingredients = Ingredient.query.order_by(Ingredient.name).all()
+    app.logger.info(f"API GET /api/ingredients: Devolviendo {len(ingredients)} ingredientes.")
+    return jsonify([ing.to_dict() for ing in ingredients])
+
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['GET'])
+@firebase_auth_required
+def get_ingredient(ingredient_id):
+    try:
+        ingredient = Ingredient.query.get_or_404(ingredient_id)
+        return jsonify(ingredient.to_dict()), 200
+    except Exception as e:
+        app.logger.error(f"API GET /api/ingredients/{ingredient_id}: Error al obtener ingrediente: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno al obtener el ingrediente.'}), 500
+
+@app.route('/api/ingredients', methods=['POST'])
+@firebase_auth_required
+def create_ingredient():
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    synonyms = data.get('synonyms', [])
+
+    try:
+        if not name:
+            raise ValueError("El nombre del ingrediente es requerido.")
+        if Ingredient.query.filter(Ingredient.name.ilike(name)).first():
+            raise ValueError("Ya existe un ingrediente con ese nombre.")
+
+        calories = validate_numeric_field(data.get('calories'), "Calorías", min_val=0)
+        protein_g = validate_numeric_field(data.get('protein_g'), "Proteínas", min_val=0)
+        carb_g = validate_numeric_field(data.get('carb_g'), "Carbohidratos", min_val=0)
+        fat_g = validate_numeric_field(data.get('fat_g'), "Grasas", min_val=0)
+
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+
+    new_ingredient = Ingredient(name=name)
+    new_ingredient.set_synonyms(synonyms)
+
+    if any(v is not None for v in [calories, protein_g, carb_g, fat_g]):
+        nutrient_entry = IngredientNutrient(
+            ingredient=new_ingredient, reference_quantity=100.0, reference_unit='g',
+            calories=calories, protein_g=protein_g, carb_g=carb_g, fat_g=fat_g
+        )
+        db.session.add(nutrient_entry)
+
+    try:
+        db.session.add(new_ingredient)
+        db.session.commit()
+        return jsonify(new_ingredient.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Error interno al crear el ingrediente.'}), 500
+
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['PUT'])
+@firebase_auth_required
+def update_ingredient(ingredient_id):
+    ingredient = Ingredient.query.get_or_404(ingredient_id)
+    data = request.get_json()
+    # ... (lógica de actualización completa aquí, similar a la de preparaciones) ...
+    # Por simplicidad, aquí solo actualizamos nombre y sinónimos
+    new_name = data.get('name', '').strip()
+    if new_name and new_name.lower() != ingredient.name.lower() and Ingredient.query.filter(Ingredient.name.ilike(new_name)).first():
+        return jsonify({'error': 'Ya existe otro ingrediente con ese nombre.'}), 409
+    ingredient.name = new_name if new_name else ingredient.name
+    ingredient.set_synonyms(data.get('synonyms', []))
+    db.session.commit()
+    return jsonify(ingredient.to_dict()), 200
+
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['DELETE'])
+@firebase_auth_required
+def delete_ingredient(ingredient_id):
+    ingredient = Ingredient.query.get_or_404(ingredient_id)
+    db.session.delete(ingredient)
+    db.session.commit()
+    return jsonify({'message': 'Ingrediente eliminado correctamente.'}), 200
+
+# --- Bloque de Arranque del Servidor ---
+if __name__ == '__main__':
+    app.run(debug=True)
+
+# --- API para Perfil de Usuario ---
+
+@app.route('/profile')
+@login_required
+def profile_page():
+    return render_template('profile.html', countries=app.config['COUNTRIES'], professions=app.config['PROFESSIONS'])
+
+@app.route('/api/user_info', methods=['GET'])
+@firebase_auth_required
+def get_user_info():
+    user = g.user
+    app.logger.info(f"API /api/user_info: Devolviendo info para usuario ID: {user.id} ({user.email})")
+    return jsonify(user.to_dict())
+
+@app.route('/api/user/profile', methods=['PUT'])
+@firebase_auth_required
+def update_user_profile():
+    user = g.user
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No se recibieron datos.'}), 400
+
+    try:
+        user.name = data.get('name', user.name)
+        user.surname = data.get('surname', user.surname)
+        user.profession = data.get('profession', user.profession)
+        user.license_number = data.get('license_number', user.license_number)
+        user.city = data.get('city', user.city)
+        user.country = data.get('country', user.country)
+        user.address = data.get('address', user.address)
+        user.phone_number = data.get('phone_number', user.phone_number)
+        
+        db.session.commit()
+        app.logger.info(f"Perfil del usuario ID {user.id} actualizado.")
+        return jsonify({'message': 'Perfil actualizado correctamente.'}), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error al actualizar perfil del usuario ID {user.id}: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno al actualizar el perfil.'}), 500
+
+# --- API para Ingredientes ---
+
+@app.route('/api/ingredients', methods=['GET'])
+@firebase_auth_required
+def get_ingredients():
+    ingredients = Ingredient.query.order_by(Ingredient.name).all()
+    app.logger.info(f"API GET /api/ingredients: Devolviendo {len(ingredients)} ingredientes.")
+    return jsonify([ing.to_dict() for ing in ingredients])
+
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['GET'])
+@firebase_auth_required
+def get_ingredient(ingredient_id):
+    try:
+        ingredient = Ingredient.query.get_or_404(ingredient_id)
+        return jsonify(ingredient.to_dict()), 200
+    except Exception as e:
+        app.logger.error(f"API GET /api/ingredients/{ingredient_id}: Error al obtener ingrediente: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno al obtener el ingrediente.'}), 500
+
+@app.route('/api/ingredients', methods=['POST'])
+@firebase_auth_required
+def create_ingredient():
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    synonyms = data.get('synonyms', [])
+
+    try:
+        if not name:
+            raise ValueError("El nombre del ingrediente es requerido.")
+        if Ingredient.query.filter(Ingredient.name.ilike(name)).first():
+            raise ValueError("Ya existe un ingrediente con ese nombre.")
+
+        calories = validate_numeric_field(data.get('calories'), "Calorías", min_val=0)
+        protein_g = validate_numeric_field(data.get('protein_g'), "Proteínas", min_val=0)
+        carb_g = validate_numeric_field(data.get('carb_g'), "Carbohidratos", min_val=0)
+        fat_g = validate_numeric_field(data.get('fat_g'), "Grasas", min_val=0)
+
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+
+    new_ingredient = Ingredient(name=name)
+    new_ingredient.set_synonyms(synonyms)
+
+    if any(v is not None for v in [calories, protein_g, carb_g, fat_g]):
+        nutrient_entry = IngredientNutrient(
+            ingredient=new_ingredient, reference_quantity=100.0, reference_unit='g',
+            calories=calories, protein_g=protein_g, carb_g=carb_g, fat_g=fat_g
+        )
+        db.session.add(nutrient_entry)
+
+    try:
+        db.session.add(new_ingredient)
+        db.session.commit()
+        return jsonify(new_ingredient.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Error interno al crear el ingrediente.'}), 500
+
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['PUT'])
+@firebase_auth_required
+def update_ingredient(ingredient_id):
+    ingredient = Ingredient.query.get_or_404(ingredient_id)
+    data = request.get_json()
+    # ... (lógica de actualización completa aquí, similar a la de preparaciones) ...
+    # Por simplicidad, aquí solo actualizamos nombre y sinónimos
+    new_name = data.get('name', '').strip()
+    if new_name and new_name.lower() != ingredient.name.lower() and Ingredient.query.filter(Ingredient.name.ilike(new_name)).first():
+        return jsonify({'error': 'Ya existe otro ingrediente con ese nombre.'}), 409
+    ingredient.name = new_name if new_name else ingredient.name
+    ingredient.set_synonyms(data.get('synonyms', []))
+    db.session.commit()
+    return jsonify(ingredient.to_dict()), 200
+
+@app.route('/api/ingredients/<int:ingredient_id>', methods=['DELETE'])
+@firebase_auth_required
+def delete_ingredient(ingredient_id):
+    ingredient = Ingredient.query.get_or_404(ingredient_id)
+    db.session.delete(ingredient)
+    db.session.commit()
+    return jsonify({'message': 'Ingrediente eliminado correctamente.'}), 200
+
+# Pega este código al final de tu archivo app.py
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Has cerrado sesión exitosamente.', 'success')
+    return redirect(url_for('login_page'))
+
+@app.route('/pacientes_dashboard')
+@login_required
+def pacientes_dashboard():
+    return render_template('pacientes_dashboard.html')
+
+@app.route('/paciente/<int:patient_id>/historial')
+@login_required
+def historial_paciente(patient_id):
+    patient = Patient.query.filter_by(id=patient_id, user_id=current_user.id).first_or_404()
+    evaluations = patient.evaluations.order_by(Evaluation.consultation_date.asc()).all()
+    
+    chart_data = {'labels': [], 'weight': [], 'imc': [], 'whr': [], 'whtr': [], 'references': {}}
+    if len(evaluations) > 1:
+        for ev in evaluations:
+            chart_data['labels'].append(ev.consultation_date.strftime('%d-%m-%Y'))
+            chart_data['weight'].append(ev.weight_at_eval)
+            if ev.weight_at_eval and patient.height_cm:
+                imc = ev.weight_at_eval / ((patient.height_cm / 100) ** 2)
+                chart_data['imc'].append(round(imc, 2))
+            else:
+                chart_data['imc'].append(None)
+            if ev.waist_circumference_cm and ev.hip_circumference_cm:
+                whr = ev.waist_circumference_cm / ev.hip_circumference_cm
+                chart_data['whr'].append(round(whr, 2))
+            else:
+                chart_data['whr'].append(None)
+            if ev.waist_circumference_cm and patient.height_cm:
+                whtr = ev.waist_circumference_cm / patient.height_cm
+                chart_data['whtr'].append(round(whtr, 2))
+            else:
+                chart_data['whtr'].append(None)
+
+    return render_template('historial_paciente.html', patient=patient, evaluations=evaluations, chart_data=chart_data)
+
+@app.route('/formulario_evaluacion', methods=['GET'])
+@login_required
+def formulario_evaluacion():
+    all_ingredients = Ingredient.query.order_by(Ingredient.name).all()
+    ingredients_for_js = [{'id': ing.id, 'name': ing.name} for ing in all_ingredients]
+    
+    return render_template('formulario_evaluacion.html', 
+                           all_ingredients=ingredients_for_js,
+                           current_date_str=datetime.now().strftime('%d/%m/%Y'),
+                           current_username=current_user.name or current_user.email,
+                           education_levels=app.config.get('EDUCATION_LEVELS', []), 
+                           purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []), 
+                           activity_factors=app.config.get('ACTIVITY_FACTORS', []),
+                           available_pathologies=app.config.get('AVAILABLE_PATHOLOGIES', []), 
+                           diet_types=app.config.get('DIET_TYPES', []))
+
+@app.route('/mis_ingredientes')
+@login_required
+def mis_ingredientes_view():
+    return render_template('mis_ingredientes.html')
+
+@app.route('/mis_preparaciones')
+@login_required
+def mis_preparaciones_view():
+    available_suitability_tags = [{'value': dt[0].lower().strip().replace(" ", "_"), 'display': dt[1]} for dt in app.config.get('DIET_TYPES', []) if dt[0].lower() != 'otra']
+    return render_template('mis_preparaciones.html', available_suitability_tags=available_suitability_tags)
+
+# --- API Routes (Protected) ---
+
+@app.route('/api/user_info', methods=['GET'])
+@firebase_auth_required
+def get_user_info():
+    user = g.user
+    return jsonify(user.to_dict())
+
+@app.route('/api/user/profile', methods=['PUT'])
+@firebase_auth_required
+def update_user_profile():
+    user = g.user
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No se recibieron datos.'}), 400
+    try:
+        user.name = data.get('name', user.name)
+        user.surname = data.get('surname', user.surname)
+        user.profession = data.get('profession', user.profession)
+        user.license_number = data.get('license_number', user.license_number)
+        user.city = data.get('city', user.city)
+        user.country = data.get('country', user.country)
+        user.address = data.get('address', user.address)
+        user.phone_number = data.get('phone_number', user.phone_number)
+        db.session.commit()
+        return jsonify({'message': 'Perfil actualizado correctamente.'}), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error al actualizar perfil del usuario ID {user.id}: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno al actualizar el perfil.'}), 500
+
+@app.route('/get_all_patients', methods=['GET'])
+@firebase_auth_required
+def get_all_patients():
+    patients = Patient.query.filter_by(user_id=g.user.id).order_by(Patient.surname, Patient.name).all()
+    patients_data = [{"id": p.id, "name": p.name, "surname": p.surname, "cedula": p.cedula} for p in patients]
+    return jsonify({"results": patients_data})
+
+# ... (Aquí irían el resto de tus rutas API, como las de ingredientes, preparaciones, etc.)
+# ... (Asegúrate de que todas estén protegidas con @firebase_auth_required y filtren por g.user.id)
+
+# --- Bloque de Arranque del Servidor ---
+if __name__ == '__main__':
+    app.run(debug=True)

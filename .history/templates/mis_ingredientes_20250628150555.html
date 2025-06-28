@@ -1,0 +1,351 @@
+{% extends 'base.html' %}
+
+{% block title %}Mis Ingredientes - NutriApp{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<link href="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.css" rel="stylesheet" type="text/css" />
+<style>
+    .tagify-container {
+        border: 1px solid #ced4da;
+        border-radius: .25rem;
+        padding: .375rem .75rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <h2 class="mb-4"><i class="fas fa-carrot"></i> Gestión de Ingredientes</h2>
+
+    <!-- Formulario para Crear/Editar Ingrediente -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0" id="ingredient-form-title"><i class="fas fa-plus-circle"></i> Añadir Nuevo Ingrediente</h5>
+        </div>
+        <div class="card-body">
+            <form id="ingredient-form">
+                <input type="hidden" id="ingredient_id" name="ingredient_id">
+
+                <div class="mb-3">
+                    <label for="ing_name" class="form-label">Nombre del Ingrediente<span class="text-danger">*</span>:</label>
+                    <input type="text" id="ing_name" name="name" class="form-control form-control-sm" required>
+                </div>
+
+                <div class="mb-3">
+                    <label for="ing_synonyms" class="form-label">Sinónimos (separados por coma):</label>
+                    <input type="text" id="ing_synonyms" name="synonyms" class="form-control form-control-sm" placeholder="Ej: tomate cherry, jitomate">
+                    <small class="form-text text-muted">Ayuda a la IA a reconocer el ingrediente.</small>
+                </div>
+                
+                <div class="d-flex justify-content-end">
+                    <button type="button" class="btn btn-secondary btn-sm me-2" id="btn-clear-ing-form">Limpiar / Cancelar Edición</button>
+                    <button type="submit" class="btn btn-primary btn-sm" id="btn-save-ingredient"><i class="fas fa-save"></i> Guardar Ingrediente</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Lista de Ingredientes Guardados -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-light">
+            <h5 class="mb-0"><i class="fas fa-list-ul"></i> Ingredientes Guardados</h5>
+        </div>
+        <div class="card-body">
+            <!-- Buscador de Ingredientes -->
+            <div class="mb-3">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" id="ingredient-search-input" class="form-control form-control-sm" placeholder="Buscar ingrediente por nombre o sinónimo...">
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-striped table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Sinónimos</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ingredients-table-body">
+                        <!-- Las filas se cargarán aquí con JavaScript -->
+                        <tr>
+                            <td colspan="3" class="text-center">Cargando ingredientes...</td>
+                        </tr>
+                        <tr id="no-results-row" style="display: none;">
+                            <td colspan="3" class="text-center text-muted">No se encontraron ingredientes que coincidan con la búsqueda.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('ingredient-form');
+        const ingredientIdInput = document.getElementById('ingredient_id');
+        const ingredientNameInput = document.getElementById('ing_name');
+        const ingredientSynonymsInput = document.getElementById('ing_synonyms');
+        const formTitle = document.getElementById('ingredient-form-title');
+        const saveButton = document.getElementById('btn-save-ingredient');
+        const clearButton = document.getElementById('btn-clear-ing-form');
+        const tableBody = document.getElementById('ingredients-table-body');
+        const searchInput = document.getElementById('ingredient-search-input');
+
+        let tagifySynonyms;
+
+        // Inicializar Tagify para el campo de sinónimos
+        tagifySynonyms = new Tagify(ingredientSynonymsInput, {
+            delimiters: ",| ",
+            maxTags: 20,
+            dropdown: { enabled: 0 },
+            originalInputValueFormat: valuesArr => valuesArr.map(item => item.value).join(',')
+        });
+
+        // --- CSRF Token Helper ---
+        function getCsrfToken() {
+            const csrfTokenElement = document.querySelector('meta[name="csrf-token"]');
+            if (csrfTokenElement) {
+                return csrfTokenElement.getAttribute('content');
+            }
+            console.error("CSRF token no encontrado en la meta etiqueta.");
+            return null;
+        }
+
+        async function loadIngredients() {
+            tableBody.innerHTML = '<tr><td colspan="3" class="text-center">Cargando ingredientes...</td></tr>';
+            try {
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    throw new Error('No estás autenticado. Por favor, inicia sesión.');
+                }
+
+                const response = await fetch('/api/ingredients', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+
+                if (response.status === 401) {
+                    throw new Error('Tu sesión ha expirado. Por favor, inicia sesión de nuevo.');
+                }
+                if (!response.ok) {
+                    throw new Error(`Error al cargar ingredientes: ${response.statusText}`);
+                }
+                const ingredients = await response.json();
+
+                tableBody.innerHTML = '';
+                const noResultsRow = `<tr id="no-results-row" style="display: none;"><td colspan="3" class="text-center text-muted">No se encontraron ingredientes que coincidan con la búsqueda.</td></tr>`;
+                tableBody.insertAdjacentHTML('beforeend', noResultsRow);
+
+                if (ingredients.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="3" class="text-center">No hay ingredientes guardados.</td></tr>';
+                    return;
+                }
+
+                ingredients.forEach(ing => {
+                    const row = tableBody.insertRow();
+                    row.insertCell().textContent = ing.name;
+                    row.insertCell().textContent = ing.synonyms ? ing.synonyms.join(', ') : '';
+                    
+                    const actionsCell = row.insertCell();
+                    actionsCell.classList.add('text-end');
+                    
+                    const editButton = document.createElement('button');
+                    editButton.classList.add('btn', 'btn-sm', 'btn-outline-primary', 'me-1');
+                    editButton.innerHTML = '<i class="fas fa-edit"></i> Editar';
+                    editButton.onclick = () => editIngredient(ing.id); 
+                    actionsCell.appendChild(editButton);
+
+                    const deleteButton = document.createElement('button');
+                    deleteButton.classList.add('btn', 'btn-sm', 'btn-outline-danger');
+                    deleteButton.innerHTML = '<i class="fas fa-trash"></i> Eliminar';
+                    deleteButton.onclick = () => deleteIngredient(ing.id, ing.name);
+                    actionsCell.appendChild(deleteButton);
+                });
+            } catch (error) {
+                console.error('Error cargando ingredientes:', error);
+                let errorMessage = 'Error al cargar ingredientes.';
+                if (error.message.includes('autenticado') || error.message.includes('expirada')) {
+                    errorMessage = error.message;
+                }
+                tableBody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">${errorMessage}</td></tr>`;
+            }
+        }
+
+        function resetForm() {
+            form.reset();
+            ingredientIdInput.value = '';
+            formTitle.innerHTML = '<i class="fas fa-plus-circle"></i> Añadir Nuevo Ingrediente';
+            saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Ingrediente';
+            tagifySynonyms.removeAllTags(); // Limpiar tags de sinónimos
+        }
+
+        async function editIngredient(id) {
+            try {
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    alert('No estás autenticado. Por favor, inicia sesión.');
+                    return;
+                }
+
+                const response = await fetch(`/api/ingredients/${id}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+
+                if (response.status === 401) {
+                    alert('Tu sesión ha expirado. Por favor, inicia sesión de nuevo.');
+                    return;
+                }
+                if (!response.ok) {
+                    throw new Error(`Error al obtener ingrediente: ${response.statusText}`);
+                }
+                const ing = await response.json();
+
+                ingredientIdInput.value = ing.id;
+                ingredientNameInput.value = ing.name;
+                tagifySynonyms.removeAllTags();
+                if (ing.synonyms && ing.synonyms.length > 0) {
+                    tagifySynonyms.addTags(ing.synonyms);
+                }
+
+                formTitle.innerHTML = '<i class="fas fa-edit"></i> Editar Ingrediente';
+                saveButton.innerHTML = '<i class="fas fa-save"></i> Actualizar Ingrediente';
+                window.scrollTo({ top: form.offsetTop - 70, behavior: 'smooth' }); 
+            } catch (error) {
+                console.error(`Error al editar ingrediente ${id}:`, error);
+                alert(`Error al cargar datos para editar: ${error.message}`);
+            }
+        }
+
+        async function deleteIngredient(id, name) {
+            if (!confirm(`¿Estás seguro de que quieres eliminar el ingrediente "${name}"?`)) {
+                return;
+            }
+            try {
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    alert('No estás autenticado. Por favor, inicia sesión.');
+                    return;
+                }
+
+                const response = await fetch(`/api/ingredients/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+
+                if (response.status === 401) {
+                    alert('Tu sesión ha expirado. Por favor, inicia sesión de nuevo.');
+                    return;
+                }
+                if (response.status === 403) {
+                    throw new Error('No tienes permiso para realizar esta acción.');
+                }
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({error: `Error al eliminar: ${response.statusText}`}));
+                    throw new Error(errorData.error);
+                }
+                alert(`Ingrediente "${name}" eliminado correctamente.`);
+                loadIngredients(); 
+            } catch (error) {
+                console.error(`Error al eliminar ingrediente ${id}:`, error);
+                alert(`Error al eliminar ingrediente: ${error.message}`);
+            }
+        }
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const ingId = ingredientIdInput.value;
+            const method = ingId ? 'PUT' : 'POST';
+            const url = ingId ? `/api/ingredients/${ingId}` : '/api/ingredients';
+
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Tagify guarda los sinónimos como una cadena JSON, necesitamos parsearlos
+            try {
+                data.synonyms = JSON.parse(data.synonyms).map(tag => tag.value);
+            } catch (e) {
+                data.synonyms = []; // Si no hay sinónimos o el formato es incorrecto
+            }
+
+            try {
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    alert('No estás autenticado. Por favor, inicia sesión.');
+                    return;
+                }
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify(data)
+                });
+                if (response.status === 401) {
+                    throw new Error('Sesión expirada. Por favor, inicia sesión de nuevo.');
+                }
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || `Error ${response.status}`);
+                }
+                
+                alert(ingId ? 'Ingrediente actualizado correctamente.' : 'Ingrediente guardado correctamente.');
+                resetForm();
+                loadIngredients();
+            } catch (error) {
+                console.error('Error al guardar ingrediente:', error);
+                alert(`Error al guardar: ${error.message}`);
+            }
+        });
+
+        function filterIngredients() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            const rows = tableBody.getElementsByTagName('tr');
+            let visibleRows = 0;
+
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.id === 'no-results-row') continue; // No filtrar la fila de "no resultados"
+
+                const nameCell = row.cells[0];
+                const synonymsCell = row.cells[1];
+                const rowText = (nameCell.textContent + ' ' + synonymsCell.textContent).toLowerCase();
+
+                if (rowText.includes(searchTerm)) {
+                    row.style.display = '';
+                    visibleRows++;
+                } else {
+                    row.style.display = 'none';
+                }
+            }
+            document.getElementById('no-results-row').style.display = visibleRows === 0 ? '' : 'none';
+        }
+
+        clearButton.addEventListener('click', resetForm);
+
+        // Carga inicial
+        loadIngredients();
+
+        // Event listener para el buscador
+        searchInput.addEventListener('keyup', filterIngredients);
+    });
+</script>
+{% endblock %}

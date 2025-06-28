@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Iniciar Sesión - App del Paciente{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h3 class="card-title text-center mb-4">Inicia Sesión en tu App</h3>
+                    
+                    <p class="text-center text-muted mb-3">Para acceder a tu plan nutricional, por favor, inicia sesión con tu cuenta de Google.</p>
+
+                    <div class="d-grid">
+                        <!-- Reemplaza esta línea con tu botón de inicio de sesión de Firebase Client SDK -->
+                        <p class="text-center text-muted">Funcionalidad de inicio de sesión con Firebase aquí</p>
+                    </div>
+                    
+                    <div class="text-center mt-3">
+                        <small class="text-muted">¿Aún no tienes acceso? Contacta a tu nutricionista.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Aquí podrías añadir el código JS para el inicio de sesión con Firebase Client SDK #}
+{% endblock %}

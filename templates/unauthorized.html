@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Acceso No Autorizado{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="alert alert-danger text-center" role="alert">
+        <h4 class="alert-heading">Acceso No Autorizado</h4>
+        <p>Lo sentimos, no tienes permiso para acceder a esta página.</p>
+        <hr>
+        <p class="mb-0">Por favor, verifica que has iniciado sesión con la cuenta correcta o contacta a tu nutricionista si crees que esto es un error.</p>
+        <a href="{{ url_for('index') }}" class="btn btn-primary mt-3">Volver al Inicio</a>
+    </div>
+</div>
+{% endblock %}
+
+
