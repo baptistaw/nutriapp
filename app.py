@@ -1434,6 +1434,19 @@ def generar_estructura_plan_prompt(plan_input_data):
             f"Sodio: RESTRINGIR según Sección E. "
             f"Alcanzar GET con carbohidratos y grasas permitidas."
         )
+
+    if "insuf. renal leve-moderada" in patient_pathologies_lower:
+        protein_target_renal_mod = f"0.8-1.0 g/kg de peso actual ({round(0.8*plan_input_data.get('weight_at_plan', 0),1)}g - {round(1.0*plan_input_data.get('weight_at_plan', 0),1)}g)"
+        critical_dietary_restrictions_notes.append(
+            f"**INSUFICIENCIA RENAL LEVE-MODERADA DETECTADA:** Ajustar proteínas a {protein_target_renal_mod}. "
+            f"Control riguroso de potasio (máx. {plan_input_data.get('micronutrients',{}).get('potassium_mg','N/A')} mg/día) y fósforo. "
+            f"Restringir sodio según Sección E."
+        )
+
+    if any('diabetes' in p for p in patient_pathologies_lower):
+        critical_dietary_restrictions_notes.append(
+            "**DIABETES DETECTADA:** Carbohidratos de bajo índice glucémico, distribuidos uniformemente y sin superar el 45% del GET diario. Evitar azúcares simples y priorizar alimentos ricos en fibra."
+        )
     # Puedes añadir más bloques 'elif' o 'if' para otras patologías con restricciones críticas aquí
     # Ejemplo:
     # if "celiaquía" in patient_pathologies_lower: # Asumiendo que "celiaquía" es un valor posible
