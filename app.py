@@ -21,6 +21,7 @@ from flask_login import LoginManager, UserMixin, login_required, current_user, l
 from flask_wtf.csrf import CSRFProtect
 from firebase_admin import credentials, auth
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import or_
 from flask_migrate import Migrate
 from urllib.parse import urlparse, urljoin
 
@@ -2452,6 +2453,17 @@ def login_page():
         firebase_uid = decoded.get('uid')
         email = decoded.get('email')
         full_name = decoded.get('name', '')
+
+        # Si existe un paciente con este UID o email, redirigir al portal del paciente
+        patient = Patient.query.filter(
+            or_(Patient.firebase_uid == firebase_uid, Patient.email == email)
+        ).first()
+        if patient:
+            if not patient.firebase_uid:
+                patient.firebase_uid = firebase_uid
+                db.session.commit()
+            app.logger.info(f"Login de paciente detectado para UID {firebase_uid} (Paciente ID {patient.id}).")
+            return redirect(url_for('patient_dashboard_page'))
 
         user = User.query.filter_by(firebase_uid=firebase_uid).first()
         if not user:
