@@ -1154,7 +1154,24 @@ async function loadPatientDashboard() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || `Error del servidor: ${response.status}`);
 
-        dashboardContainer.innerHTML = `<div class="card shadow-sm"><div class="card-header bg-primary text-white"><h3 class="mb-0">Mi Plan Nutricional</h3></div><div class="card-body"><h5 class="card-title">Hola, ${data.patient_name}</h5><p class="card-text text-muted">Este es tu plan correspondiente a la consulta del ${data.consultation_date}.</p><hr><div class="plan-text-container">${data.plan_text}</div><hr><h6 class="mt-4">Observaciones del Nutricionista:</h6><p class="text-muted fst-italic">${data.nutritionist_observations}</p></div></div>`;
+        dashboardContainer.innerHTML =
+            `<div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">Mi Plan Nutricional</h3>
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">Hola, ${data.patient_name}</h5>
+                    <p class="card-text text-muted">Este es tu plan correspondiente a la consulta del ${data.consultation_date}.</p>
+                    <hr>
+                    <div class="plan-text-container">${data.plan_text}</div>
+                    <hr>
+                    <h6 class="mt-4">Observaciones del Nutricionista:</h6>
+                    <p class="text-muted fst-italic">${data.nutritionist_observations}</p>
+                    <a href="/patient_chat/${data.patient_id}" class="btn btn-success mt-3">
+                        <i class="fas fa-comments"></i> Ir al Chat
+                    </a>
+                </div>
+            </div>`;
     } catch (error) {
         console.error("Error loading patient dashboard:", error);
         dashboardContainer.innerHTML = `<div class="alert alert-danger">Error al cargar tu plan: ${error.message}</div>`;
