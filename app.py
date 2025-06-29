@@ -1683,7 +1683,7 @@ def generar_plan_nutricional_v2(plan_input_data):
         temperature=0.7, 
         top_p=0.9,       
         top_k=40,        
-        max_output_tokens=8000 # Aumentado para permitir planes más largos
+        max_output_tokens=16000 # Aumentado para permitir planes más largos
     )
 
     texto_plan_estructura = ""
