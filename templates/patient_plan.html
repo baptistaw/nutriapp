@@ -25,7 +25,9 @@
             <h4>Plan Semanal</h4>
             <div class="card">
                 <div class="card-body">
-                    <pre style="white-space: pre-wrap; word-wrap: break-word;">{{ plan_structure_text if plan_structure_text else 'Plan no disponible.' }}</pre>
+                    <div class="plan-html">
+                        {{ plan_structure_text | markdown_to_html | safe if plan_structure_text else 'Plan no disponible.' }}
+                    </div>
                 </div>
             </div>
         </div>
