@@ -82,7 +82,7 @@ def manejar_excepcion(e):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-from flask import Markup
+from markupsafe import Markup
 try:
     import markdown as markdown_lib
 
