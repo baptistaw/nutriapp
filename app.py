@@ -82,49 +82,6 @@ def manejar_excepcion(e):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-from markupsafe import Markup
-try:
-    import markdown as markdown_lib
-
-    def markdown_to_html(text: str) -> Markup:
-        """Convert Markdown text to HTML using the markdown package."""
-        return Markup(markdown_lib.markdown(text))
-except Exception:  # pragma: no cover - fallback when markdown not available
-    def markdown_to_html(text: str) -> Markup:
-        """Basic fallback Markdown to HTML converter."""
-        lines = text.splitlines()
-        html_lines = []
-        in_list = False
-        for line in lines:
-            if line.startswith('# '):
-                if in_list:
-                    html_lines.append('</ul>')
-                    in_list = False
-                html_lines.append(f'<h1>{line[2:].strip()}</h1>')
-            elif line.startswith('## '):
-                if in_list:
-                    html_lines.append('</ul>')
-                    in_list = False
-                html_lines.append(f'<h2>{line[3:].strip()}</h2>')
-            elif line.startswith('* '):
-                if not in_list:
-                    html_lines.append('<ul>')
-                    in_list = True
-                html_lines.append(f'<li>{line[2:].strip()}</li>')
-            else:
-                if in_list:
-                    html_lines.append('</ul>')
-                    in_list = False
-                if line.strip():
-                    html_lines.append(f'<p>{line.strip()}</p>')
-                else:
-                    html_lines.append('')
-        if in_list:
-            html_lines.append('</ul>')
-        return Markup('\n'.join(html_lines))
-
-app.jinja_env.filters['markdown_to_html'] = markdown_to_html
-
 def is_safe_url(target: str) -> bool:
     """Return True if the URL is safe to redirect to."""
     ref_url = urlparse(request.host_url)
@@ -190,6 +147,42 @@ def firebase_auth_required(view_func):
 
     return wrapped_view
 
+# --- Decorador de Autenticación Firebase para PACIENTES ---
+def patient_auth_required(view_func):
+    """
+    Verifica el token de Firebase y asegura que el UID corresponda a un Paciente
+    y que el paciente solo acceda a sus propios datos.
+    """
+    @wraps(view_func)
+    def wrapped_view(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Token de autenticación de paciente faltante"}), 401
+
+        id_token = auth_header.split(" ", 1)[1]
+        try:
+            decoded = auth.verify_id_token(id_token)
+            firebase_uid = decoded.get("uid")
+        except Exception as e:
+            app.logger.error(f"Error verificando token Firebase de paciente: {e}")
+            return jsonify({"error": "Token de paciente inválido o expirado"}), 401
+
+        # Buscar al paciente en nuestra base de datos local por su UID de Firebase
+        patient = Patient.query.filter_by(firebase_uid=firebase_uid).first()
+        if not patient:
+            return jsonify({"error": "Paciente no encontrado para este token"}), 401
+
+        # **Paso de autorización crucial**
+        # Asegurarse de que el ID del paciente en la URL coincida con el ID del paciente autenticado
+        url_patient_id = kwargs.get('patient_id')
+        if url_patient_id and patient.id != url_patient_id:
+            app.logger.warning(f"Acceso denegado: Paciente UID {firebase_uid} (ID: {patient.id}) intentó acceder a datos del Paciente ID {url_patient_id}.")
+            return jsonify({"error": "Acceso prohibido. Solo puedes acceder a tus propios datos."}), 403
+
+        g.patient = patient  # Hacer que el objeto paciente esté disponible en la ruta
+        return view_func(*args, **kwargs)
+
+    return wrapped_view
 # --- Procesador de Contexto ---
 @app.context_processor
 def inject_now():
@@ -1477,19 +1470,6 @@ def generar_estructura_plan_prompt(plan_input_data):
             f"Sodio: RESTRINGIR según Sección E. "
             f"Alcanzar GET con carbohidratos y grasas permitidas."
         )
-
-    if "insuf. renal leve-moderada" in patient_pathologies_lower:
-        protein_target_renal_mod = f"0.8-1.0 g/kg de peso actual ({round(0.8*plan_input_data.get('weight_at_plan', 0),1)}g - {round(1.0*plan_input_data.get('weight_at_plan', 0),1)}g)"
-        critical_dietary_restrictions_notes.append(
-            f"**INSUFICIENCIA RENAL LEVE-MODERADA DETECTADA:** Ajustar proteínas a {protein_target_renal_mod}. "
-            f"Control riguroso de potasio (máx. {plan_input_data.get('micronutrients',{}).get('potassium_mg','N/A')} mg/día) y fósforo. "
-            f"Restringir sodio según Sección E."
-        )
-
-    if any('diabetes' in p for p in patient_pathologies_lower):
-        critical_dietary_restrictions_notes.append(
-            "**DIABETES DETECTADA:** Carbohidratos de bajo índice glucémico, distribuidos uniformemente y sin superar el 45% del GET diario. Evitar azúcares simples y priorizar alimentos ricos en fibra."
-        )
     # Puedes añadir más bloques 'elif' o 'if' para otras patologías con restricciones críticas aquí
     # Ejemplo:
     # if "celiaquía" in patient_pathologies_lower: # Asumiendo que "celiaquía" es un valor posible
@@ -1787,7 +1767,6 @@ def generar_plan_nutricional_v2(plan_input_data):
 
     # --- PASO 3: Combinar estructura y recetas ---
     plan_completo = texto_plan_estructura + "\n\n" + texto_recetario_detallado
-    plan_completo = re.sub(r"\*\*\(Contin\u00faa?\s+con\s+las\s+recetas.*?\)\*\*", "", plan_completo, flags=re.IGNORECASE)
     app.logger.info("Plan completo (estructura + recetas) ensamblado.")
     return plan_completo
 # ... (aquí termina tu función generar_plan_nutricional_v2)
@@ -2142,25 +2121,22 @@ def crear_pdf_v2(evaluation_instance):
         app.logger.error(f"Error creando PDF (v2) para Evaluación ID {evaluation_instance.id if evaluation_instance else 'N/A'}): {pdf_error}", exc_info=True)
         return io.BytesIO()
 
-def draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_ref, text_content, font_name, font_size, indent=0, line_spacing_factor=1.1, y_margin_page=50, page_height_ref=letter[1], is_list_item=False, bullet="• ", font_color=colors.black):
+def draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_ref, text_content, font_name, font_size, indent=0, line_spacing_factor=1.1, y_margin_page=50, page_height_ref=letter[1], is_list_item=False, bullet="• "):
     """
-    Helper function to draw a block of text with specific styling, handling line
-    wrapping and page breaks. Allows specifying a text color for the whole block.
+    Helper function to draw a block of text with specific styling, handling line wrapping and page breaks.
     Returns the new current_y position.
     """
     p.setFont(font_name, font_size)
-    p.setFillColor(font_color)
     # Asegurarse de que text_content sea un string
     text_content_str = str(text_content) if text_content is not None else ""
 
     lines = simpleSplit(text_content_str, p._fontname, p._fontsize, max_width - indent)
     new_y = current_y
     for i, line_text in enumerate(lines):
-        if new_y < y_margin_page + line_height_ref:  # Check if new page is needed
+        if new_y < y_margin_page + line_height_ref: # Check if new page is needed
             p.showPage()
             new_y = page_height_ref - y_margin_page
-            p.setFont(font_name, font_size)  # Re-apply font on new page
-            p.setFillColor(font_color)
+            p.setFont(font_name, font_size) # Re-apply font on new page
         
         prefix = bullet if is_list_item and i == 0 else "" # Add bullet only to the first line of a list item
         p.drawString(x_margin + indent, new_y, prefix + line_text.strip())
@@ -2225,31 +2201,24 @@ def crear_pdf_paciente(evaluation_instance):
                 is_day_title_patient = day_regex_patient.match(line_patient)
                 is_meal_title_patient = meal_regex_patient.match(line_patient)
                 font_name_patient = "Helvetica"; font_size_patient = 10.5; indent_patient = 0
-                font_color_patient = colors.black
                 space_before_patient = 0; line_spacing_mult_patient = 1.2
                 if is_day_title_patient:
                     font_name_patient = "Helvetica-Bold"; font_size_patient = 12
-                    font_color_patient = colors.HexColor("#003366")
                     if i_patient > 0: space_before_patient = line_height_base * 0.8
                     line_patient = day_regex_patient.sub(r"\1:", line_patient).upper()
                     app.logger.debug(f"PDF_DEBUG (crear_pdf_paciente): Plan - Día: '{line_patient}'")
                 elif is_meal_title_patient:
-                    font_name_patient = "Helvetica-Bold"; font_size_patient = 11; indent_patient = 5
-                    font_color_patient = colors.HexColor("#333333")
+                    font_name_patient = "Helvetica-Bold"; font_size_patient = 11; indent_patient = 10
                     space_before_patient = line_height_base * 0.3
                     line_patient = meal_regex_patient.sub(r"\1:", line_patient)
                     app.logger.debug(f"PDF_DEBUG (crear_pdf_paciente): Plan - Comida: '{line_patient}'")
                 else:
-                    indent_patient = 15
-                    cleaned_line_patient = line_patient.lstrip("*-• ").strip()
+                    indent_patient = 20; cleaned_line_patient = line_patient.lstrip("*-• ").strip()
                     line_patient = f"• {cleaned_line_patient}" if cleaned_line_patient else ""
                     line_spacing_mult_patient = 1.15
+                    # app.logger.debug(f"PDF_DEBUG (crear_pdf_paciente): Plan - Item: '{line_patient}'") # Puede ser muy verboso
                 current_y -= space_before_patient
-                current_y = draw_text_block_with_style(
-                    p, current_y, x_margin, max_width, line_height_base, line_patient,
-                    font_name_patient, font_size_patient, indent=indent_patient,
-                    line_spacing_factor=line_spacing_mult_patient, y_margin_page=y_margin,
-                    page_height_ref=height, font_color=font_color_patient)
+                current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, line_patient, font_name_patient, font_size_patient, indent=indent_patient, line_spacing_factor=line_spacing_mult_patient, y_margin_page=y_margin, page_height_ref=height)
         else:
             current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Plan de comidas no disponible.", "Helvetica-Italic", 10)
         
@@ -2266,78 +2235,38 @@ def crear_pdf_paciente(evaluation_instance):
             draw_patient_section_title("Recetas Detalladas")
 
             for i_recipe_p, recipe in enumerate(parsed_recipes):
-                app.logger.debug(
-                    f"PDF_DEBUG (crear_pdf_paciente): Dibujando receta paciente N°{i_recipe_p+1}: {recipe.get('name', 'Sin Nombre')}"
-                )
-                if current_y < y_margin + line_height_base * 5:
+                app.logger.debug(f"PDF_DEBUG (crear_pdf_paciente): Dibujando receta paciente N°{i_recipe_p+1}: {recipe.get('name', 'Sin Nombre')}")
+                if current_y < y_margin + line_height_base * 5: 
                     p.showPage(); current_y = height - y_margin
                     draw_patient_section_title("Recetas Detalladas (Cont.)")
-
-                current_y = draw_text_block_with_style(
-                    p, current_y, x_margin, max_width, line_height_base,
-                    f"{recipe.get('number', 'Receta N/N')}: {recipe.get('name', 'Sin Nombre')}",
-                    "Helvetica-Bold", 12, indent=8, line_spacing_factor=1.3,
-                    font_color=colors.HexColor('#003366')
-                )
+                
+                current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, f"{recipe.get('number', 'Receta N/N')}: {recipe.get('name', 'Sin Nombre')}", "Helvetica-Bold", 12, indent=10, line_spacing_factor=1.3)
 
                 if recipe.get('servings'):
-                    current_y = draw_text_block_with_style(
-                        p, current_y, x_margin, max_width, line_height_base,
-                        f"Rinde: {recipe['servings']}", "Helvetica-Oblique", 10,
-                        indent=18, line_spacing_factor=1.2
-                    )
+                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, f"Rinde: {recipe['servings']}", "Helvetica-Oblique", 10, indent=20, line_spacing_factor=1.2)
                 if recipe.get('ingredients'):
-                    current_y = draw_text_block_with_style(
-                        p, current_y, x_margin, max_width, line_height_base,
-                        "Ingredientes:", "Helvetica-Bold", 10.5, indent=18, line_spacing_factor=1.2
-                    )
+                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Ingredientes:", "Helvetica-Bold", 10.5, indent=20, line_spacing_factor=1.2)
                     for ing in recipe['ingredients']:
                         ing_text = ing.get('raw_line', 'Ingrediente desconocido').lstrip('* ').strip()
-                        current_y = draw_text_block_with_style(
-                            p, current_y, x_margin, max_width, line_height_base,
-                            ing_text, "Helvetica", 10.5, indent=25, is_list_item=True,
-                            bullet="• ", line_spacing_factor=1.1
-                        )
+                        current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, ing_text, "Helvetica", 10.5, indent=30, is_list_item=True, bullet="• ", line_spacing_factor=1.1)
                     current_y -= line_height_base * 0.3
                 if recipe.get('instructions'):
-                    current_y = draw_text_block_with_style(
-                        p, current_y, x_margin, max_width, line_height_base,
-                        "Preparación:", "Helvetica-Bold", 10.5, indent=18, line_spacing_factor=1.2
-                    )
-                    instruction_lines = str(recipe['instructions']).split('\n')  # Asegurar que sea string
+                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Preparación:", "Helvetica-Bold", 10.5, indent=20, line_spacing_factor=1.2)
+                    instruction_lines = str(recipe['instructions']).split('\n') # Asegurar que sea string
                     for i, instr_line in enumerate(instruction_lines):
                         instr_text = instr_line.strip()
                         is_numbered = re.match(r"^\s*\d+\.\s*", instr_text)
-                        bullet_char = "" if is_numbered else "• "
-                        text_to_draw = instr_text
-                        current_y = draw_text_block_with_style(
-                            p, current_y, x_margin, max_width, line_height_base,
-                            text_to_draw, "Helvetica", 10.5, indent=25, is_list_item=not is_numbered, bullet=bullet_char, line_spacing_factor=1.1
-                        )
+                        bullet_char = "" if is_numbered else "• " 
+                        text_to_draw = instr_text 
+                        current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, text_to_draw, "Helvetica", 10.5, indent=30, is_list_item=not is_numbered, bullet=bullet_char, line_spacing_factor=1.1)
                     current_y -= line_height_base * 0.3
                 if recipe.get('condiments'):
-                    current_y = draw_text_block_with_style(
-                        p, current_y, x_margin, max_width, line_height_base,
-                        "Condimentos Sugeridos:", "Helvetica-Bold", 10.5,
-                        indent=18, line_spacing_factor=1.2
-                    )
-                    current_y = draw_text_block_with_style(
-                        p, current_y, x_margin, max_width, line_height_base,
-                        recipe['condiments'], "Helvetica", 10.5, indent=25,
-                        line_spacing_factor=1.1
-                    )
+                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Condimentos Sugeridos:", "Helvetica-Bold", 10.5, indent=20, line_spacing_factor=1.2)
+                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, recipe['condiments'], "Helvetica", 10.5, indent=30, line_spacing_factor=1.1)
                     current_y -= line_height_base * 0.3
                 if recipe.get('presentation'):
-                    current_y = draw_text_block_with_style(
-                        p, current_y, x_margin, max_width, line_height_base,
-                        "Sugerencia de Presentación/Servicio:", "Helvetica-Bold", 10.5,
-                        indent=18, line_spacing_factor=1.2
-                    )
-                    current_y = draw_text_block_with_style(
-                        p, current_y, x_margin, max_width, line_height_base,
-                        recipe['presentation'], "Helvetica", 10.5, indent=25,
-                        line_spacing_factor=1.1
-                    )
+                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "Sugerencia de Presentación/Servicio:", "Helvetica-Bold", 10.5, indent=20, line_spacing_factor=1.2)
+                    current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, recipe['presentation'], "Helvetica", 10.5, indent=30, line_spacing_factor=1.1)
                 current_y -= line_height_base * 0.8 
         else:
             current_y = draw_text_block_with_style(p, current_y, x_margin, max_width, line_height_base, "No se pudieron parsear las recetas detalladas.", "Helvetica-Italic", 10)
@@ -3019,7 +2948,6 @@ def generar_plan_endpoint():
         traceback.print_exc() 
         return jsonify({'error': 'Ocurrió un error inesperado al generar el plan.'}), 500
 @app.route('/guardar_evaluacion', methods=['POST'])
-@firebase_auth_required
 def guardar_evaluacion():
     try:
         app.logger.info("Iniciando /guardar_evaluacion (NUEVA EVALUACIÓN)")
@@ -3245,11 +3173,10 @@ def guardar_evaluacion():
                             num_servings_for_prep_fav = 1.0
                             
                         new_preparation = UserPreparation(
-                            user_id=g.user.id,
                             name=actual_recipe_name_from_recetario,
                             description=parsed_recipe_data.get('description', "Receta generada por IA y marcada como favorita."),
                             instructions=parsed_recipe_data.get('instructions', "Instrucciones no parseadas."),
-                            preparation_type=parsed_recipe_data.get('preparation_type', 'almuerzo'),
+                            preparation_type=parsed_recipe_data.get('preparation_type', 'almuerzo'), 
                             num_servings=num_servings_for_prep_fav,
                             source='favorita_ia_finalizar'
                         )
@@ -3352,7 +3279,6 @@ def guardar_evaluacion():
         return jsonify({'error': 'Error inesperado al guardar la evaluación.'}), 500
 
 @app.route('/actualizar_evaluacion/<int:evaluation_id>', methods=['PUT'])
-@firebase_auth_required
 def actualizar_evaluacion_endpoint(evaluation_id):
     evaluation = Evaluation.query.get_or_404(evaluation_id)
     patient = evaluation.patient
@@ -3515,11 +3441,10 @@ def actualizar_evaluacion_endpoint(evaluation_id):
                             num_servings_for_prep_fav_update = 1.0
                             
                         new_preparation = UserPreparation(
-                            user_id=g.user.id,
                             name=actual_recipe_name_from_recetario,
                             description=parsed_recipe_data.get('description', "Receta generada por IA y marcada como favorita."),
                             instructions=parsed_recipe_data.get('instructions', "Instrucciones no parseadas."),
-                            preparation_type=parsed_recipe_data.get('preparation_type', 'almuerzo'),
+                            preparation_type=parsed_recipe_data.get('preparation_type', 'almuerzo'), 
                             num_servings=num_servings_for_prep_fav_update,
                             source='favorita_ia_finalizar'
                         )
@@ -3720,12 +3645,13 @@ def enviar_plan_email_route(evaluation_id):
 # --- Rutas API para la App del Paciente ---
 
 @app.route('/api/patient/<int:patient_id>/weight', methods=['GET', 'POST'])
+@patient_auth_required
 def patient_weight_api(patient_id):
-    patient = Patient.query.get_or_404(patient_id)
+    patient = g.patient # El paciente ya fue verificado y cargado por el decorador
 
     if request.method == 'GET':
         # Obtener el historial de peso del paciente
-        weight_entries = WeightEntry.query.filter_by(patient_id=patient.id).order_by(WeightEntry.date.asc()).all()
+        weight_entries = patient.weight_history.order_by(WeightEntry.date.asc()).all()
         entries_data = [{'date': entry.date.strftime('%Y-%m-%d'), 'weight_kg': entry.weight_kg, 'notes': entry.notes} for entry in weight_entries]
         app.logger.info(f"API /patient/{patient_id}/weight - Obtenido historial de peso. {len(entries_data)} entradas.")
         return jsonify({'entries': entries_data})
@@ -3757,12 +3683,13 @@ def patient_weight_api(patient_id):
         return jsonify({'error': 'Método no permitido.'}), 405
 
 @app.route('/api/patient/<int:patient_id>/chat/messages', methods=['GET', 'POST']) # Puede ser por evaluación
+@patient_auth_required
 def patient_chat_api(patient_id):
-    patient = Patient.query.get_or_404(patient_id)
+    patient = g.patient # El paciente ya fue verificado y cargado por el decorador
 
     if request.method == 'GET':
         # Obtener historial de mensajes
-        messages = ChatMessage.query.filter_by(patient_id=patient.id).order_by(ChatMessage.timestamp.asc()).limit(50).all()
+        messages = patient.chat_messages.order_by(ChatMessage.timestamp.asc()).limit(50).all()
         messages_data = [{
             'id': msg.id,
             'sender_is_patient': msg.sender_is_patient,
@@ -3783,14 +3710,9 @@ def patient_chat_api(patient_id):
             if not message_text:
                 return jsonify({'error': 'Mensaje vacío.'}), 400
 
-            sender_flag = data.get('sender_is_patient')
-            if sender_flag is None:
-                # Si el flag no viene explícito, asumimos paciente si no hay usuario autenticado
-                sender_flag = not current_user.is_authenticated
-
             new_message = ChatMessage(
                 patient_id=patient.id,
-                sender_is_patient=bool(sender_flag),
+                sender_is_patient=True, # Si la API es para pacientes, el emisor siempre es el paciente
                 message_text=message_text
                 # evaluation_id se puede añadir si el chat es específico de un plan
             )
@@ -4127,7 +4049,7 @@ def delete_user_preparation(preparation_id):
         return jsonify({'error': 'Error interno al eliminar la preparación.'}), 500
 
 @app.route('/api/favorite_generated_preparation', methods=['POST'])
-@firebase_auth_required
+# @login_required # Or remove if you don't have login implemented yet
 def favorite_generated_preparation():
     data = request.get_json()
     if not data or 'recipe_name' not in data or 'full_plan_text' not in data:
@@ -4148,8 +4070,14 @@ def favorite_generated_preparation():
         return jsonify({'error': f"No se pudo parsear la receta '{recipe_name_to_find}' del texto del plan."}), 400
 
     try:
+        user_id_for_prep = None
+        # if hasattr(current_user, 'id') and current_user.is_authenticated:
+        # user_id_for_prep = current_user.id
+        # elif hasattr(g, 'user') and g.user and hasattr(g.user, 'id'): # Comprobación adicional para g.user.id
+        # user_id_for_prep = g.user.id
+
         new_preparation = UserPreparation(
-            user_id=g.user.id,
+            # user_id=user_id_for_prep, # Temporarily remove or keep commented if User model/login is not ready
             name=parsed_recipe_data.get('name', recipe_name_to_find), # Usar el nombre parseado de la receta
             description=parsed_recipe_data.get('description', "Receta generada por IA y marcada como favorita."),
             instructions=parsed_recipe_data.get('instructions', "Instrucciones no parseadas."),
