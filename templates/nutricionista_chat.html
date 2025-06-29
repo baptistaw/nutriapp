@@ -1,76 +1,137 @@
 {% extends "base.html" %}
 
-{% block title %}Chat con Paciente - {{ patient.name }}{% endblock %}
+{% block title %}Chat con {{ patient.name }} {{ patient.surname }}{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    #chat-container {
+        height: 60vh;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        padding: 15px;
+        border-radius: 8px;
+        background-color: #f9f9f9;
+        display: flex;
+        flex-direction: column;
+    }
+    .chat-message {
+        max-width: 70%;
+        padding: 10px 15px;
+        border-radius: 18px;
+        margin-bottom: 10px;
+        word-wrap: break-word;
+    }
+    .message-sent { /* Mensajes del nutricionista */
+        background-color: #0d6efd;
+        color: white;
+        align-self: flex-end;
+        border-bottom-right-radius: 4px;
+    }
+    .message-received { /* Mensajes del paciente */
+        background-color: #e9ecef;
+        color: #212529;
+        align-self: flex-start;
+        border-bottom-left-radius: 4px;
+    }
+    .message-timestamp {
+        font-size: 0.75em;
+        color: #adb5bd;
+        margin-top: 5px;
+        display: block;
+    }
+    .message-sent .message-timestamp {
+        color: #f8f9fa;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Chat con {{ patient.name }} {{ patient.surname }}</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><i class="fas fa-comments"></i> Chat con {{ patient.name }} {{ patient.surname }}</h2>
+        <a href="{{ url_for('historial_paciente', patient_id=patient.id) }}" class="btn btn-secondary">Volver al Historial</a>
+    </div>
     <hr>
 
-    <div id="chat-box" style="height: 400px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 15px; background-color: #f9f9f9;">
-        <p class="text-muted text-center">Cargando mensajes...</p>
+    <div id="chat-container">
+        <p class="text-muted text-center my-auto">Cargando mensajes...</p>
     </div>
 
-    <div class="input-group mb-3">
+    <div class="input-group mt-3">
         <input type="text" class="form-control" placeholder="Escribe tu mensaje..." id="chatMessageInput" aria-label="Mensaje">
-        <button class="btn btn-primary" type="button" id="sendChatMessageButton">Enviar</button>
+        <button class="btn btn-primary" type="button" id="sendChatMessageButton">
+            <i class="fas fa-paper-plane"></i> Enviar
+        </button>
     </div>
-
-    <hr class="my-4">
-    <a href="{{ url_for('historial_paciente', patient_id=patient.id) }}" class="btn btn-secondary">Volver al Historial</a>
 </div>
+{% endblock %}
 
+{% block scripts %}
+{{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const chatBox = document.getElementById('chat-box');
+    const chatContainer = document.getElementById('chat-container');
     const messageInput = document.getElementById('chatMessageInput');
     const sendButton = document.getElementById('sendChatMessageButton');
     const patientId = {{ patient.id }};
-    let pollingInterval;
+    let isFetching = false; // Para evitar peticiones simultáneas
 
-    function addMessageToChat(message) {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('mb-2', 'p-2', 'rounded');
-
-        const senderType = message.sender_is_patient ? 'patient' : 'nutricionista';
-
-        if (senderType === 'nutricionista') {
-            messageElement.classList.add('bg-primary', 'text-white', 'ms-auto');
-            messageElement.style.maxWidth = '70%';
-            messageElement.style.textAlign = 'right';
-        } else {
-            messageElement.classList.add('bg-light', 'text-dark', 'me-auto');
-            messageElement.style.maxWidth = '70%';
+    function addMessageToChat(message, scroll = true) {
+        // Evita duplicados si el mensaje ya está en el DOM
+        if (document.getElementById(`msg-${message.id}`)) {
+            return;
         }
-        messageElement.textContent = message.message_text || message.content;
 
-        const timestampElement = document.createElement('small');
-        timestampElement.classList.add('d-block', 'text-muted', (senderType === 'nutricionista' ? 'text-end' : 'text-start'));
-        timestampElement.style.fontSize = '0.75em';
-        timestampElement.style.marginTop = '5px';
+        const messageWrapper = document.createElement('div');
+        messageWrapper.id = `msg-${message.id}`;
+        const messageElement = document.createElement('div');
+        
+        const isSent = !message.sender_is_patient;
+        messageWrapper.className = `d-flex flex-column ${isSent ? 'align-items-end' : 'align-items-start'} w-100`;
+        messageElement.className = `chat-message ${isSent ? 'message-sent' : 'message-received'}`;
+        
+        messageElement.textContent = message.message_text;
+        
+        const timestampElement = document.createElement('span');
+        timestampElement.className = 'message-timestamp';
         timestampElement.textContent = new Date(message.timestamp).toLocaleString();
-
         messageElement.appendChild(timestampElement);
-        chatBox.appendChild(messageElement);
-        chatBox.scrollTop = chatBox.scrollHeight;
+
+        messageWrapper.appendChild(messageElement);
+        chatContainer.appendChild(messageWrapper);
+        
+        if (scroll) {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
     }
 
     async function loadMessages() {
+        if (isFetching) return;
+        isFetching = true;
+
         try {
-            const response = await fetch(`/api/patient/${patientId}/chat/messages`);
-            if (!response.ok) {
-                throw new Error(`Error al cargar mensajes: ${response.statusText}`);
-            }
+            const token = localStorage.getItem('authToken');
+            if (!token) throw new Error("No autenticado. Por favor, inicie sesión.");
+
+            const response = await fetch(`/api/nutricionista/chat/${patientId}/messages`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) throw new Error(`Error al cargar mensajes: ${response.statusText}`);
+
             const data = await response.json();
-            chatBox.innerHTML = '';
+            
+            if (chatContainer.querySelector('p')) chatContainer.innerHTML = '';
+            
             if (data.messages && data.messages.length > 0) {
-                data.messages.forEach(msg => addMessageToChat(msg));
-            } else {
-                chatBox.innerHTML = '<p class="text-muted text-center">No hay mensajes en este chat aún.</p>';
+                data.messages.forEach(msg => addMessageToChat(msg, false));
+                chatContainer.scrollTop = chatContainer.scrollHeight;
             }
         } catch (error) {
-            console.error("Error loading chat messages:", error);
-            chatBox.innerHTML = `<p class="text-danger text-center">Error al cargar mensajes: ${error.message}</p>`;
+            console.error('Fallo al cargar mensajes:', error);
+        } finally {
+            isFetching = false;
         }
     }
 
@@ -78,51 +139,54 @@ document.addEventListener('DOMContentLoaded', function() {
         const messageText = messageInput.value.trim();
         if (!messageText) return;
 
-        const messageData = {
-            content: messageText,
-            sender_is_patient: false
-        };
+        sendButton.disabled = true;
+        sendButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
 
         try {
-            const response = await fetch(`/api/patient/${patientId}/chat/messages`, {
+            const token = localStorage.getItem('authToken');
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+            const response = await fetch(`/api/nutricionista/chat/${patientId}/messages`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(messageData)
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ content: messageText })
             });
 
-            if (response.ok) {
-                const newMessage = await response.json();
-                const noMessagesP = chatBox.querySelector('p.text-muted.text-center');
-                if (noMessagesP && noMessagesP.textContent.includes("No hay mensajes")) {
-                    chatBox.innerHTML = '';
-                }
-                addMessageToChat(newMessage);
-                messageInput.value = '';
-            } else {
-                const errorResult = await response.json().catch(() => ({error: 'Error desconocido al enviar mensaje'}));
-                alert(`Error al enviar el mensaje: ${errorResult.error}`);
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Fallo al enviar el mensaje');
             }
+
+            const newMessage = await response.json();
+            addMessageToChat(newMessage, true);
+            messageInput.value = '';
+            
         } catch (error) {
-            alert('Error de red al enviar el mensaje.');
-            console.error("Error sending chat message:", error);
+            console.error('Error enviando mensaje:', error);
+            alert(`Error: ${error.message}`);
+        } finally {
+            sendButton.disabled = false;
+            sendButton.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
+            messageInput.focus();
         }
     }
 
+    // Event Listeners
     sendButton.addEventListener('click', sendMessage);
-    messageInput.addEventListener('keypress', function(event) {
-        if (event.key === 'Enter') {
+    messageInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
             sendMessage();
         }
     });
 
-    function startPolling() {
-        if (pollingInterval) clearInterval(pollingInterval);
-        pollingInterval = setInterval(loadMessages, 5000);
-        console.log('Chat polling started for nutritionist view.');
-    }
-
+    // Carga inicial y polling para nuevos mensajes
     loadMessages();
-    startPolling();
+    setInterval(loadMessages, 5000); // Revisa nuevos mensajes cada 5 segundos
 });
 </script>
 {% endblock %}
