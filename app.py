@@ -82,6 +82,49 @@ def manejar_excepcion(e):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+from flask import Markup
+try:
+    import markdown as markdown_lib
+
+    def markdown_to_html(text: str) -> Markup:
+        """Convert Markdown text to HTML using the markdown package."""
+        return Markup(markdown_lib.markdown(text))
+except Exception:  # pragma: no cover - fallback when markdown not available
+    def markdown_to_html(text: str) -> Markup:
+        """Basic fallback Markdown to HTML converter."""
+        lines = text.splitlines()
+        html_lines = []
+        in_list = False
+        for line in lines:
+            if line.startswith('# '):
+                if in_list:
+                    html_lines.append('</ul>')
+                    in_list = False
+                html_lines.append(f'<h1>{line[2:].strip()}</h1>')
+            elif line.startswith('## '):
+                if in_list:
+                    html_lines.append('</ul>')
+                    in_list = False
+                html_lines.append(f'<h2>{line[3:].strip()}</h2>')
+            elif line.startswith('* '):
+                if not in_list:
+                    html_lines.append('<ul>')
+                    in_list = True
+                html_lines.append(f'<li>{line[2:].strip()}</li>')
+            else:
+                if in_list:
+                    html_lines.append('</ul>')
+                    in_list = False
+                if line.strip():
+                    html_lines.append(f'<p>{line.strip()}</p>')
+                else:
+                    html_lines.append('')
+        if in_list:
+            html_lines.append('</ul>')
+        return Markup('\n'.join(html_lines))
+
+app.jinja_env.filters['markdown_to_html'] = markdown_to_html
+
 def is_safe_url(target: str) -> bool:
     """Return True if the URL is safe to redirect to."""
     ref_url = urlparse(request.host_url)
@@ -1744,6 +1787,7 @@ def generar_plan_nutricional_v2(plan_input_data):
 
     # --- PASO 3: Combinar estructura y recetas ---
     plan_completo = texto_plan_estructura + "\n\n" + texto_recetario_detallado
+    plan_completo = re.sub(r"\*\*\(Contin\u00faa?\s+con\s+las\s+recetas.*?\)\*\*", "", plan_completo, flags=re.IGNORECASE)
     app.logger.info("Plan completo (estructura + recetas) ensamblado.")
     return plan_completo
 # ... (aquí termina tu función generar_plan_nutricional_v2)
