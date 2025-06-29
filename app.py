@@ -3059,6 +3059,7 @@ def get_my_latest_plan():
         return jsonify({'message': 'Aún no tienes un plan de alimentación disponible.'}), 404
 
     return jsonify({
+        'patient_id': patient.id,
         'patient_name': f"{patient.name} {patient.surname}",
         'consultation_date': latest_evaluation.consultation_date.strftime('%d/%m/%Y'),
         'plan_text': latest_evaluation.edited_plan_text,
