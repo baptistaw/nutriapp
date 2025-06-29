@@ -1843,7 +1843,7 @@ def parse_all_recipes_from_text_block(recetario_text):
         condiments_text = ""
         presentation_text = ""
 
-        servings_match = re.search(r"Porciones que Rinde:\s*(.*?)(?=\n\s*(?:Ingredientes:|Preparación:)|$)", content_after_title, re.DOTALL | re.IGNORECASE)
+        servings_match = re.search(r"\**\s*(?:Porciones que Rinde:|Rinde:)\s*(.*?)(?=\n\s*\**\s*(?:Ingredientes:|Preparación:)|$)", content_after_title, re.DOTALL | re.IGNORECASE)
         if servings_match:
             servings_text = servings_match.group(1).strip()
             app.logger.debug(f"    Porciones: {servings_text}")
@@ -1851,7 +1851,7 @@ def parse_all_recipes_from_text_block(recetario_text):
         # Regex to capture ingredients. Stops at known section headers OR a line that looks like a sub-recipe title (e.g., "Mayonesa:")
         # OR a numbered list item (likely start of preparation steps if "Preparación:" was missed) OR end of block.
         # Lookahead for sub-header: newline, optional spaces, then text ending with colon.
-        ingredients_section_regex = r"Ingredientes\s*(?:\([^)]*\))?:\s*\n((?:.|\n)*?)(?=\n\s*(?:Preparación:|Condimentos Sugeridos:|Sugerencia de Presentación:|[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚáéíóúñÑ\s(),'-]*:|\d+\.\s)|$)"
+        ingredients_section_regex = r"\**\s*Ingredientes\s*(?:\([^)]*\))?:\**\s*\n((?:.|\n)*?)(?=\n\s*\**\s*(?:Preparación:|Condimentos Sugeridos:|Sugerencia de Presentación:|[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚáéíóúñÑ\s(),'-]*:|\d+\.\s)|$)"
         
         ingredients_section_match = re.search(ingredients_section_regex, content_after_title, re.DOTALL | re.IGNORECASE)
         if ingredients_section_match:
@@ -1881,19 +1881,19 @@ def parse_all_recipes_from_text_block(recetario_text):
         else:
             app.logger.warning(f"    No se encontró la sección 'Ingredientes:' para '{recipe_name}'")
 
-        prep_match = re.search(r"Preparación:\s*\n(.*?)(?=\n\s*(?:Condimentos Sugeridos:|Sugerencia de Presentación:)|$)", content_after_title, re.DOTALL | re.IGNORECASE)
+        prep_match = re.search(r"\**\s*Preparación:\**\s*\n(.*?)(?=\n\s*\**\s*(?:Condimentos Sugeridos:|Sugerencia de Presentación:)|$)", content_after_title, re.DOTALL | re.IGNORECASE)
         if prep_match:
             instructions_text = prep_match.group(1).strip()
             app.logger.debug(f"    Preparación (primeros 100 chars): {instructions_text[:100]}...")
         else:
             app.logger.warning(f"    No se encontró la sección 'Preparación:' para '{recipe_name}'")
 
-        condiments_match = re.search(r"Condimentos Sugeridos:\s*(.*?)(?=\n\s*(?:Sugerencia de Presentación:)|$)", content_after_title, re.DOTALL | re.IGNORECASE)
+        condiments_match = re.search(r"\**\s*Condimentos Sugeridos:\**\s*(.*?)(?=\n\s*\**\s*(?:Sugerencia de Presentación:)|$)", content_after_title, re.DOTALL | re.IGNORECASE)
         if condiments_match:
             condiments_text = condiments_match.group(1).strip()
             app.logger.debug(f"    Condimentos: {condiments_text[:100]}...")
 
-        presentation_match = re.search(r"Sugerencia de Presentación(?:/Servicio)?:\s*(.*?)(?=\n\nReceta\s*(?:N°|No\.|N\.)?\s*\d+:|$)", content_after_title, re.DOTALL | re.IGNORECASE)
+        presentation_match = re.search(r"\**\s*Sugerencia de Presentación(?:/Servicio)?:\**\s*(.*?)(?=\n\n\**\s*Receta\s*(?:N°|No\.|N\.)?\s*\d+:|$)", content_after_title, re.DOTALL | re.IGNORECASE)
         if presentation_match:
             presentation_text = presentation_match.group(1).strip()
             app.logger.debug(f"    Presentación: {presentation_text[:100]}...")
@@ -3064,6 +3064,7 @@ def guardar_evaluacion():
                     )
         else:
             app.logger.info("Creando nuevo Paciente")
+            patient_fields_clean['user_id'] = current_user.id
             paciente = Patient(**patient_fields_clean)
             paciente.user_id = current_user.id
             paciente.set_allergies(plan_data.get('allergies', [])); paciente.set_intolerances(plan_data.get('intolerances', []))
@@ -3346,6 +3347,11 @@ def actualizar_evaluacion_endpoint(evaluation_id):
     if not patient:
         app.logger.error(f"Error crítico: Evaluación ID {evaluation_id} no tiene paciente asociado para actualizar.")
         return jsonify({'error': "Error: La evaluación no está asociada a ningún paciente."}), 500
+    if patient.user_id is None:
+        patient.user_id = current_user.id
+        app.logger.info(
+            f"Paciente asociado a Evaluación {evaluation_id} sin usuario. Asociando a usuario ID {current_user.id}."
+        )
 
     try:
         app.logger.info(f"Iniciando PUT para actualizar Evaluación ID: {evaluation_id}")
