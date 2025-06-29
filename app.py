@@ -226,6 +226,7 @@ class User(UserMixin, db.Model):
 class Patient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    firebase_uid = db.Column(db.String(128), unique=True, nullable=True)
     # Identificación y Datos Filiatorios
     name = db.Column(db.String(80), nullable=False)
     surname = db.Column(db.String(80), nullable=False)
@@ -3019,7 +3020,7 @@ def guardar_evaluacion():
         if 'email' in patient_fields_clean and patient_fields_clean['email'] and not re.match(r"[^@]+@[^@]+\.[^@]+", patient_fields_clean['email']):
             return jsonify({'error': 'Formato de email no válido.'}), 400
 
-        if paciente: 
+        if paciente:
             app.logger.info(f"Actualizando datos Paciente ID {paciente.id}")
             for key, value in patient_fields_clean.items(): setattr(paciente, key, value)
             paciente.set_allergies(plan_data.get('allergies', []))
@@ -3030,6 +3031,21 @@ def guardar_evaluacion():
                 existing_patient_by_email = Patient.query.filter(Patient.email == email_from_form, Patient.id != paciente.id).first()
                 if existing_patient_by_email:
                     return jsonify({'error': f"El email '{email_from_form}' ya está registrado para otro paciente. No se puede actualizar."}), 400
+
+            # Asegurar que el paciente tenga cuenta en Firebase si tiene email
+            if not paciente.firebase_uid and paciente.email:
+                try:
+                    fb_user = auth.get_user_by_email(paciente.email)
+                except Exception:
+                    fb_user = auth.create_user(
+                        email=paciente.email,
+                        password=cedula,
+                        display_name=f"{paciente.name} {paciente.surname}"
+                    )
+                paciente.firebase_uid = fb_user.uid
+                app.logger.info(
+                    f"Cuenta Firebase asociada al paciente existente {paciente.email} con UID {fb_user.uid}"
+                )
         else:
             app.logger.info("Creando nuevo Paciente")
             paciente = Patient(**patient_fields_clean)
@@ -3037,6 +3053,21 @@ def guardar_evaluacion():
             paciente.set_allergies(plan_data.get('allergies', [])); paciente.set_intolerances(plan_data.get('intolerances', []))
             paciente.set_preferences(plan_data.get('preferences', [])); paciente.set_aversions(plan_data.get('aversions', []))
             db.session.add(paciente)
+
+            # Crear cuenta en Firebase si se proporciona email
+            if paciente.email:
+                try:
+                    fb_user = auth.create_user(
+                        email=paciente.email,
+                        password=cedula,
+                        display_name=f"{paciente.name} {paciente.surname}"
+                    )
+                    paciente.firebase_uid = fb_user.uid
+                    app.logger.info(
+                        f"Cuenta Firebase creada para paciente {paciente.email} con UID {fb_user.uid}"
+                    )
+                except Exception as fb_err:
+                    app.logger.error(f"Error creando usuario Firebase: {fb_err}")
         db.session.commit() 
         app.logger.info(f"Paciente ID {paciente.id} listo.")
 
