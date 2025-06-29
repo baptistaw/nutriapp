@@ -1285,59 +1285,6 @@ function initializePatientChat() {
     }, 7000);
 }
 
-async function loadShoppingList() {
-    const container = document.getElementById('shopping-list-content');
-    if (!container) return;
-
-    const token = localStorage.getItem('patientAuthToken');
-    if (!token) {
-        window.location.href = '/patient/login';
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/patient/me/shopping_list', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Error al cargar la lista de compras.');
-        }
-
-        let html = `<p class="text-muted">Para la evaluación del: ${data.evaluation_date}</p>`;
-        const categories = data.shopping_list_items;
-        let hasItems = false;
-
-        for (const category in categories) {
-            const items = categories[category];
-            if (items.length > 0) {
-                hasItems = true;
-                html += `<h5 class="mt-4 text-success">${category}</h5>`;
-                html += '<ul class="list-group list-group-flush">';
-                items.forEach(item => {
-                    html += `<li class="list-group-item">
-                                <input class="form-check-input me-2" type="checkbox" value="" id="item-${item.replace(/\s/g, '')}">
-                                <label class="form-check-label" for="item-${item.replace(/\s/g, '')}">${item}</label>
-                             </li>`;
-                });
-                html += '</ul>';
-            }
-        }
-
-        if (!hasItems) {
-            html += `<div class="alert alert-info mt-3" role="alert">
-                        <i class="fas fa-info-circle"></i> No se encontraron ingredientes para generar la lista.
-                     </div>`;
-        }
-        container.innerHTML = html;
-
-    } catch (error) {
-        console.error("Error cargando lista de compras:", error);
-        container.innerHTML = `<div class="alert alert-warning">${error.message}</div>`;
-    }
-}
-
 // --- Base Foods Dynamic Rows ---
 function addBaseFoodRow(foodName = '') {
     const container = document.getElementById('base-foods-container');
@@ -1527,9 +1474,6 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
         // Si no estamos en el dashboard del paciente, nos aseguramos de que el timer esté detenido.
         clearPatientChatInterval();
-    }
-    if (window.location.pathname.includes('/patient/shopping_list')) {
-        loadShoppingList();
     }
 });
 

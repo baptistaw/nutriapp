@@ -3088,15 +3088,13 @@ def get_my_shopping_list():
         return jsonify({'error': 'El plan no contiene un recetario detallado.'}), 404
 
     parsed_recipes = parse_all_recipes_from_text_block(recetario_block_text)
-    
-    # Diccionario para sumar las cantidades totales por ingrediente y unidad
-    summed_ingredients = {}
+    shopping_list_items = {}
 
     for recipe in parsed_recipes:
         for ingredient_data in recipe.get('ingredients', []):
             raw_line = ingredient_data.get('raw_line')
             if not raw_line: continue
-
+            
             parsed_ingredient = _parse_ingredient_line(f"* {raw_line}")
             item_name = parsed_ingredient.get('item')
             quantity = parsed_ingredient.get('quantity')
@@ -3104,47 +3102,14 @@ def get_my_shopping_list():
 
             if not item_name or quantity is None or unit is None or unit == "N/A": continue
 
-            # Usar el nombre en minúsculas como clave para agrupar sin importar mayúsculas
-            item_key = item_name.lower().strip()
-            summed_ingredients.setdefault(item_key, {'display_name': item_name.capitalize(), 'units': {}})
-            summed_ingredients[item_key]['units'].setdefault(unit, 0.0)
-            summed_ingredients[item_key]['units'][unit] += quantity
-
-    # --- Nueva Lógica de Categorización y Formateo ---
-    pantry_items = ["aceite", "sal", "pimienta", "vinagre", "salsa de soja", "curry", "comino", "orégano", "laurel", "tomillo", "romero", "pimentón", "jengibre", "canela", "nuez moscada", "ajo en polvo", "cebolla en polvo", "caldo", "levadura", "miel", "azúcar", "edulcorante", "mostaza", "ketchup"]
-    categories = {
-        "Frutas y Verduras": [],
-        "Proteínas (Carnes, Aves, Pescado, Tofu)": [],
-        "Granos, Legumbres y Pasta": [],
-        "Lácteos y Huevos": [],
-        "Despensa (Aceites, Condimentos, Salsas, etc.)": [],
-        "Otros": []
-    }
-
-    for item_key, data in summed_ingredients.items():
-        display_name = data['display_name']
-        
-        # Determinar si es un item de despensa
-        is_pantry_item = any(pantry_word in item_key for pantry_word in pantry_items)
-
-        if is_pantry_item:
-            formatted_item = display_name
-            categories["Despensa (Aceites, Condimentos, Salsas, etc.)"].append(formatted_item)
-        else:
-            # Para no-despensa, mostrar cantidades sumadas
-            quantities_str = ", ".join([f'{round(qty, 2) if qty % 1 != 0 else int(qty)} {unit}' for unit, qty in data['units'].items()])
-            formatted_item = f"{display_name}: {quantities_str}"
-            
-            # Lógica simple de categorización (se puede mejorar)
-            if any(w in item_key for w in ["pollo", "carne", "pescado", "salmón", "merluza", "atún", "tofu", "ternera", "cerdo", "pavo"]): categories["Proteínas (Carnes, Aves, Pescado, Tofu)"].append(formatted_item)
-            elif any(w in item_key for w in ["arroz", "quinoa", "lenteja", "garbanzo", "fideo", "pasta", "pan"]): categories["Granos, Legumbres y Pasta"].append(formatted_item)
-            elif any(w in item_key for w in ["leche", "queso", "yogur", "huevo"]): categories["Lácteos y Huevos"].append(formatted_item)
-            elif any(w in item_key for w in ["agua"]): continue # Omitir agua de la lista de compras
-            else: categories["Frutas y Verduras"].append(formatted_item) # Default para el resto
+            item_name_capitalized = item_name.capitalize()
+            shopping_list_items.setdefault(item_name_capitalized, {})
+            shopping_list_items[item_name_capitalized].setdefault(unit, 0.0)
+            shopping_list_items[item_name_capitalized][unit] += quantity
 
     return jsonify({
         'evaluation_date': latest_evaluation.consultation_date.strftime('%d/%m/%Y'),
-        'shopping_list_items': categories
+        'shopping_list_items': shopping_list_items
     })
 
 @app.route('/guardar_evaluacion', methods=['POST'])

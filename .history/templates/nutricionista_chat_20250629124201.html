@@ -75,16 +75,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const messageInput = document.getElementById('chatMessageInput');
     const sendButton = document.getElementById('sendChatMessageButton');
     const patientId = {{ patient.id }};
-    let isFetching = false; // Para evitar peticiones simultáneas
+    let lastMessageId = 0;
 
-    function addMessageToChat(message, scroll = true) {
-        // Evita duplicados si el mensaje ya está en el DOM
-        if (document.getElementById(`msg-${message.id}`)) {
-            return;
-        }
-
+    function addMessageToChat(message) {
         const messageWrapper = document.createElement('div');
-        messageWrapper.id = `msg-${message.id}`;
         const messageElement = document.createElement('div');
         
         const isSent = !message.sender_is_patient;
@@ -101,92 +95,20 @@ document.addEventListener('DOMContentLoaded', function() {
         messageWrapper.appendChild(messageElement);
         chatContainer.appendChild(messageWrapper);
         
-        if (scroll) {
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+        if (message.id > lastMessageId) {
+            lastMessageId = message.id;
         }
     }
 
     async function loadMessages() {
-        if (isFetching) return;
-        isFetching = true;
-
-        try {
-            const token = localStorage.getItem('authToken');
-            if (!token) throw new Error("No autenticado. Por favor, inicie sesión.");
-
-            const response = await fetch(`/api/nutricionista/chat/${patientId}/messages`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (!response.ok) throw new Error(`Error al cargar mensajes: ${response.statusText}`);
-
-            const data = await response.json();
-            
-            if (chatContainer.querySelector('p')) chatContainer.innerHTML = '';
-            
-            if (data.messages && data.messages.length > 0) {
-                data.messages.forEach(msg => addMessageToChat(msg, false));
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            }
-        } catch (error) {
-            console.error('Fallo al cargar mensajes:', error);
-        } finally {
-            isFetching = false;
-        }
+        // Esta función se implementará en el siguiente paso con el JavaScript
     }
 
     async function sendMessage() {
-        const messageText = messageInput.value.trim();
-        if (!messageText) return;
-
-        sendButton.disabled = true;
-        sendButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
-
-        try {
-            const token = localStorage.getItem('authToken');
-            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-
-            const response = await fetch(`/api/nutricionista/chat/${patientId}/messages`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                    'X-CSRFToken': csrfToken
-                },
-                body: JSON.stringify({ content: messageText })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Fallo al enviar el mensaje');
-            }
-
-            const newMessage = await response.json();
-            addMessageToChat(newMessage, true);
-            messageInput.value = '';
-            
-        } catch (error) {
-            console.error('Error enviando mensaje:', error);
-            alert(`Error: ${error.message}`);
-        } finally {
-            sendButton.disabled = false;
-            sendButton.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
-            messageInput.focus();
-        }
+        // Esta función se implementará en el siguiente paso con el JavaScript
     }
 
-    // Event Listeners
-    sendButton.addEventListener('click', sendMessage);
-    messageInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-
-    // Carga inicial y polling para nuevos mensajes
-    loadMessages();
-    setInterval(loadMessages, 5000); // Revisa nuevos mensajes cada 5 segundos
+    // Aquí irán los event listeners y el polling
 });
 </script>
 {% endblock %}

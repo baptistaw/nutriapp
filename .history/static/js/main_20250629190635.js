@@ -1306,26 +1306,23 @@ async function loadShoppingList() {
         }
 
         let html = `<p class="text-muted">Para la evaluación del: ${data.evaluation_date}</p>`;
-        const categories = data.shopping_list_items;
-        let hasItems = false;
+        const items = data.shopping_list_items;
 
-        for (const category in categories) {
-            const items = categories[category];
-            if (items.length > 0) {
-                hasItems = true;
-                html += `<h5 class="mt-4 text-success">${category}</h5>`;
-                html += '<ul class="list-group list-group-flush">';
-                items.forEach(item => {
-                    html += `<li class="list-group-item">
-                                <input class="form-check-input me-2" type="checkbox" value="" id="item-${item.replace(/\s/g, '')}">
-                                <label class="form-check-label" for="item-${item.replace(/\s/g, '')}">${item}</label>
-                             </li>`;
-                });
-                html += '</ul>';
+        if (Object.keys(items).length > 0) {
+            html += '<ul class="list-group list-group-flush">';
+            for (const itemName in items) {
+                html += `<li class="list-group-item">
+                            <strong class="text-primary">${itemName}</strong>
+                            <ul class="list-unstyled ms-3 mt-1">`;
+                for (const unit in items[itemName]) {
+                    const quantity = items[itemName][unit];
+                    const formattedQuantity = (quantity % 1 !== 0) ? quantity.toFixed(2) : parseInt(quantity, 10);
+                    html += `<li><i class="fas fa-caret-right text-secondary me-1"></i> ${formattedQuantity} ${unit}</li>`;
+                }
+                html += `</ul></li>`;
             }
-        }
-
-        if (!hasItems) {
+            html += '</ul>';
+        } else {
             html += `<div class="alert alert-info mt-3" role="alert">
                         <i class="fas fa-info-circle"></i> No se encontraron ingredientes para generar la lista.
                      </div>`;

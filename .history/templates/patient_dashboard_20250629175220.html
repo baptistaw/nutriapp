@@ -39,10 +39,7 @@
         <h2 class="mb-0">Mi Portal</h2>
         <!-- Contenedor del botón de chat, se hará visible con JS -->
         <div id="show-chat-button-container" style="display: none;">
-            <a href="{{ url_for('patient_shopping_list_page') }}" class="btn btn-success"><i class="fas fa-shopping-cart"></i> Lista de Compras</a>
-            <button id="show-chat-button" class="btn btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#patientChatModal">
-                <i class="fas fa-comments"></i> Chatear con mi Nutricionista
-            </button>
+            <button id="show-chat-button" class="btn btn-primary"><i class="fas fa-comments"></i> Chatear con mi Nutricionista</button>
         </div>
     </div>
     <hr class="mb-4">
@@ -56,25 +53,18 @@
         </div>
     </div>
 
-    <!-- Modal del Chat del Paciente -->
-    <div class="modal fade" id="patientChatModal" tabindex="-1" aria-labelledby="patientChatModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="patientChatModalLabel"><i class="fas fa-comments"></i> Chat con tu Nutricionista</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="patient-chat-container">
-                        <p class="text-muted text-center my-auto">Cargando chat...</p>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <div class="input-group">
-                        <input type="text" class="form-control" placeholder="Escribe tu mensaje..." id="patientChatMessageInput">
-                        <button class="btn btn-primary" type="button" id="sendPatientChatMessageButton"><i class="fas fa-paper-plane"></i> Enviar</button>
-                    </div>
-                </div>
+    <!-- Sección de Chat (inicialmente oculta) -->
+    <div id="patient-chat-section" class="card shadow-sm mt-4" style="display: none;">
+        <div class="card-header bg-secondary text-white">
+            <h4 class="mb-0"><i class="fas fa-comments"></i> Chat con tu Nutricionista</h4>
+        </div>
+        <div class="card-body">
+            <div id="patient-chat-container">
+                <p class="text-muted text-center my-auto">Cargando chat...</p>
+            </div>
+            <div class="input-group mt-3">
+                <input type="text" class="form-control" placeholder="Escribe tu mensaje..." id="patientChatMessageInput">
+                <button class="btn btn-primary" type="button" id="sendPatientChatMessageButton"><i class="fas fa-paper-plane"></i> Enviar</button>
             </div>
         </div>
     </div>

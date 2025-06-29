@@ -3037,12 +3037,6 @@ def patient_dashboard_page():
     """
     return render_template('patient_dashboard.html')
 
-@app.route('/patient/shopping_list')
-def patient_shopping_list_page():
-    """
-    Renders the shell page for the shopping list. Data is loaded via JS.
-    """
-    return render_template('patient_shopping_list.html')
 
 # --- API para el Portal del Paciente ---
 
@@ -3063,88 +3057,6 @@ def get_my_latest_plan():
         'consultation_date': latest_evaluation.consultation_date.strftime('%d/%m/%Y'),
         'plan_text': latest_evaluation.edited_plan_text,
         'nutritionist_observations': latest_evaluation.user_observations or "Sin observaciones adicionales."
-    })
-
-@app.route('/api/patient/me/shopping_list')
-@patient_auth_required
-def get_my_shopping_list():
-    """
-    API that generates and returns the shopping list for the patient's latest plan.
-    """
-    patient = g.patient
-    app.logger.info(f"API: Generando lista de compras para Paciente ID {patient.id}")
-
-    latest_evaluation = patient.evaluations.order_by(Evaluation.consultation_date.desc()).first()
-
-    if not latest_evaluation or not latest_evaluation.edited_plan_text:
-        return jsonify({'error': 'No se encontró un plan para generar la lista de compras.'}), 404
-
-    full_plan_text = latest_evaluation.edited_plan_text
-    recetario_marker = "== RECETARIO DETALLADO =="
-    plan_parts = full_plan_text.split(recetario_marker, 1)
-    recetario_block_text = plan_parts[1].strip() if len(plan_parts) > 1 else ""
-
-    if not recetario_block_text:
-        return jsonify({'error': 'El plan no contiene un recetario detallado.'}), 404
-
-    parsed_recipes = parse_all_recipes_from_text_block(recetario_block_text)
-    
-    # Diccionario para sumar las cantidades totales por ingrediente y unidad
-    summed_ingredients = {}
-
-    for recipe in parsed_recipes:
-        for ingredient_data in recipe.get('ingredients', []):
-            raw_line = ingredient_data.get('raw_line')
-            if not raw_line: continue
-
-            parsed_ingredient = _parse_ingredient_line(f"* {raw_line}")
-            item_name = parsed_ingredient.get('item')
-            quantity = parsed_ingredient.get('quantity')
-            unit = parsed_ingredient.get('unit')
-
-            if not item_name or quantity is None or unit is None or unit == "N/A": continue
-
-            # Usar el nombre en minúsculas como clave para agrupar sin importar mayúsculas
-            item_key = item_name.lower().strip()
-            summed_ingredients.setdefault(item_key, {'display_name': item_name.capitalize(), 'units': {}})
-            summed_ingredients[item_key]['units'].setdefault(unit, 0.0)
-            summed_ingredients[item_key]['units'][unit] += quantity
-
-    # --- Nueva Lógica de Categorización y Formateo ---
-    pantry_items = ["aceite", "sal", "pimienta", "vinagre", "salsa de soja", "curry", "comino", "orégano", "laurel", "tomillo", "romero", "pimentón", "jengibre", "canela", "nuez moscada", "ajo en polvo", "cebolla en polvo", "caldo", "levadura", "miel", "azúcar", "edulcorante", "mostaza", "ketchup"]
-    categories = {
-        "Frutas y Verduras": [],
-        "Proteínas (Carnes, Aves, Pescado, Tofu)": [],
-        "Granos, Legumbres y Pasta": [],
-        "Lácteos y Huevos": [],
-        "Despensa (Aceites, Condimentos, Salsas, etc.)": [],
-        "Otros": []
-    }
-
-    for item_key, data in summed_ingredients.items():
-        display_name = data['display_name']
-        
-        # Determinar si es un item de despensa
-        is_pantry_item = any(pantry_word in item_key for pantry_word in pantry_items)
-
-        if is_pantry_item:
-            formatted_item = display_name
-            categories["Despensa (Aceites, Condimentos, Salsas, etc.)"].append(formatted_item)
-        else:
-            # Para no-despensa, mostrar cantidades sumadas
-            quantities_str = ", ".join([f'{round(qty, 2) if qty % 1 != 0 else int(qty)} {unit}' for unit, qty in data['units'].items()])
-            formatted_item = f"{display_name}: {quantities_str}"
-            
-            # Lógica simple de categorización (se puede mejorar)
-            if any(w in item_key for w in ["pollo", "carne", "pescado", "salmón", "merluza", "atún", "tofu", "ternera", "cerdo", "pavo"]): categories["Proteínas (Carnes, Aves, Pescado, Tofu)"].append(formatted_item)
-            elif any(w in item_key for w in ["arroz", "quinoa", "lenteja", "garbanzo", "fideo", "pasta", "pan"]): categories["Granos, Legumbres y Pasta"].append(formatted_item)
-            elif any(w in item_key for w in ["leche", "queso", "yogur", "huevo"]): categories["Lácteos y Huevos"].append(formatted_item)
-            elif any(w in item_key for w in ["agua"]): continue # Omitir agua de la lista de compras
-            else: categories["Frutas y Verduras"].append(formatted_item) # Default para el resto
-
-    return jsonify({
-        'evaluation_date': latest_evaluation.consultation_date.strftime('%d/%m/%Y'),
-        'shopping_list_items': categories
     })
 
 @app.route('/guardar_evaluacion', methods=['POST'])
@@ -3890,41 +3802,57 @@ def patient_weight_api(patient_id):
     else:
         return jsonify({'error': 'Método no permitido.'}), 405
 
-@app.route('/api/patient/me/chat/messages', methods=['GET'])
+@app.route('/api/patient/<int:patient_id>/chat/messages', methods=['GET', 'POST']) # Puede ser por evaluación
 @patient_auth_required
-def get_my_chat_messages():
+def patient_chat_api(patient_id):
     patient = g.patient # El paciente ya fue verificado y cargado por el decorador
-    messages = patient.chat_messages.order_by(ChatMessage.timestamp.asc()).all()
-    messages_data = [msg.to_dict() for msg in messages]
-    app.logger.info(f"API Paciente Chat: Obtenidos {len(messages_data)} mensajes para Paciente ID {patient.id}")
-    return jsonify({'messages': messages_data})
 
-@app.route('/api/patient/me/chat/messages', methods=['POST'])
-@patient_auth_required
-def send_my_chat_message():
-    patient = g.patient
-    data = request.get_json()
-    if not data or not data.get('content'):
-        return jsonify({'error': 'El contenido del mensaje no puede estar vacío.'}), 400
+    if request.method == 'GET':
+        # Obtener historial de mensajes
+        messages = patient.chat_messages.order_by(ChatMessage.timestamp.asc()).limit(50).all()
+        messages_data = [{
+            'id': msg.id,
+            'sender_is_patient': msg.sender_is_patient,
+            'message_text': msg.message_text, 
+            'timestamp': msg.timestamp.isoformat()
+        } for msg in messages]
+        app.logger.info(f"API /patient/{patient_id}/chat/messages - Obtenidos {len(messages_data)} mensajes.")
+        return jsonify({'messages': messages_data})
     
-    message_text = data['content'].strip()
-    if not message_text:
-        return jsonify({'error': 'El contenido del mensaje no puede estar vacío.'}), 400
+    elif request.method == 'POST':
+        # Enviar un nuevo mensaje
+        data = request.get_json()
+        if not data or 'content' not in data:  # 'content' es el nombre que usa el JS
+            return jsonify({'error': 'Mensaje vacío.'}), 400
 
-    try:
-        new_message = ChatMessage(
-            patient_id=patient.id,
-            sender_is_patient=True, # Paciente envía
-            message_text=message_text
-        )
-        db.session.add(new_message)
-        db.session.commit()
-        app.logger.info(f"API Paciente Chat: Nuevo mensaje del Paciente ID {patient.id} guardado.")
-        return jsonify(new_message.to_dict()), 201
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"API Paciente Chat: Error al guardar mensaje para Paciente ID {patient.id}: {e}", exc_info=True)
-        return jsonify({'error': 'Error interno al guardar el mensaje.'}), 500
+        try:
+            message_text = data['content'].strip()
+            if not message_text:
+                return jsonify({'error': 'Mensaje vacío.'}), 400
+
+            new_message = ChatMessage(
+                patient_id=patient.id,
+                sender_is_patient=True, # Si la API es para pacientes, el emisor siempre es el paciente
+                message_text=message_text
+                # evaluation_id se puede añadir si el chat es específico de un plan
+            )
+            db.session.add(new_message)
+            db.session.commit()
+            app.logger.info(f"API /patient/{patient_id}/chat/messages - Nuevo mensaje del paciente registrado.")
+
+            return jsonify({
+                'id': new_message.id,
+                'sender_is_patient': new_message.sender_is_patient,
+                'message_text': new_message.message_text,
+                'timestamp': new_message.timestamp.isoformat()
+            }), 201
+
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"API /patient/{patient_id}/chat/messages - Error al enviar mensaje: {e}", exc_info=True)
+            return jsonify({'error': 'Error al enviar el mensaje.'}), 500
+    else:
+        return jsonify({'error': 'Método no permitido.'}), 405
 
 # --- API para el Chat del Nutricionista ---
 
