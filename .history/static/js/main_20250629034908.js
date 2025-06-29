@@ -26,8 +26,7 @@ async function handleAuthStateChange(user) {
 
   // Get current path info
   const currentPath = window.location.pathname;
-   // CORRECCIÓN CRÍTICA: Usar '===' para evitar que '/patient/login' active esta lógica.
-  const isNutritionistAuthPage = currentPath === '/login' || currentPath === '/register';
+ 
   const isPatientRoute = isPatientAppRoute(currentPath);
 
   if (user) { // User is authenticated with Firebase

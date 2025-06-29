@@ -26,8 +26,7 @@ async function handleAuthStateChange(user) {
 
   // Get current path info
   const currentPath = window.location.pathname;
-   // CORRECCIÓN CRÍTICA: Usar '===' para evitar que '/patient/login' active esta lógica.
-  const isNutritionistAuthPage = currentPath === '/login' || currentPath === '/register';
+  const isNutritionistAuthPage = currentPath.includes('/login') || currentPath.includes('/register');
   const isPatientRoute = isPatientAppRoute(currentPath);
 
   if (user) { // User is authenticated with Firebase
@@ -1072,80 +1071,6 @@ async function handleLogout(event) {
   }
 }
 
-// --- Patient Portal Functions ---
-
-async function handlePatientLogin(event) {
-    event.preventDefault();
-    const email = document.getElementById('patient-login-email').value;
-    const password = document.getElementById('patient-login-password').value;
-    const errorMessageDiv = document.getElementById('patient-login-error-message');
-    const spinner = document.getElementById('patient-login-spinner');
-    
-    if (errorMessageDiv) errorMessageDiv.classList.add('d-none');
-    if (spinner) spinner.classList.remove('d-none');
-
-    try {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
-        const idToken = await user.getIdToken();
-        
-        // Store the token for the patient app to use
-        localStorage.setItem('patientAuthToken', idToken);
-        console.log("PATIENT_AUTH: Token de paciente guardado en localStorage.");
-
-        // Redirect to the patient dashboard
-        window.location.href = '/patient/dashboard';
-
-    } catch (error) {
-        let friendlyMessage = "Correo electrónico o contraseña incorrectos.";
-        if (error.code === 'auth/invalid-email') {
-            friendlyMessage = "El formato del correo es inválido.";
-        } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-            friendlyMessage = "Correo electrónico o contraseña incorrectos.";
-        }
-        if(errorMessageDiv) {
-            errorMessageDiv.textContent = friendlyMessage;
-            errorMessageDiv.classList.remove('d-none');
-        }
-        console.error("Firebase Patient Login Error:", error);
-    } finally {
-        if (spinner) spinner.classList.add('d-none');
-    }
-}
-
-async function loadPatientDashboard() {
-    const dashboardContainer = document.getElementById('patient-dashboard-content');
-    if (!dashboardContainer) return;
-
-    const token = localStorage.getItem('patientAuthToken');
-    if (!token) {
-        console.log("PATIENT_DASHBOARD: No hay token, redirigiendo al login de paciente.");
-        window.location.href = '/patient/login';
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/patient/me/latest_plan', {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.status === 401) {
-            localStorage.removeItem('patientAuthToken');
-            throw new Error("Tu sesión ha expirado. Por favor, ingresa de nuevo.");
-        }
-        
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || `Error del servidor: ${response.status}`);
-
-        dashboardContainer.innerHTML = `<div class="card shadow-sm"><div class="card-header bg-primary text-white"><h3 class="mb-0">Mi Plan Nutricional</h3></div><div class="card-body"><h5 class="card-title">Hola, ${data.patient_name}</h5><p class="card-text text-muted">Este es tu plan correspondiente a la consulta del ${data.consultation_date}.</p><hr><div class="plan-text-container">${data.plan_text}</div><hr><h6 class="mt-4">Observaciones del Nutricionista:</h6><p class="text-muted fst-italic">${data.nutritionist_observations}</p></div></div>`;
-    } catch (error) {
-        console.error("Error loading patient dashboard:", error);
-        dashboardContainer.innerHTML = `<div class="alert alert-danger">Error al cargar tu plan: ${error.message}</div>`;
-        if (error.message.includes("expirado")) setTimeout(() => { window.location.href = '/patient/login'; }, 3000);
-    }
-}
-
 // --- Base Foods Dynamic Rows ---
 function addBaseFoodRow(foodName = '') {
     const container = document.getElementById('base-foods-container');
@@ -1198,23 +1123,121 @@ function getBaseFoodsFromDynamicSelects() {
     return baseFoods;
 }
 
-function initializeEventListeners() {
-    // Nutricionista
+// --- DOMContentLoaded Listener ---
+document.addEventListener("DOMContentLoaded", () => {
+    console.log("DEBUG_UI: DOMContentLoaded - Evento disparado.");
+
+    // The single, central auth state listener
+    onAuthStateChanged(auth, handleAuthStateChange);
+
+    // Event listeners for nutritionist forms
     const loginForm = document.getElementById('login-form');
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
-
+    
     const registerForm = document.getElementById('register-form');
     if (registerForm) registerForm.addEventListener('submit', handleRegister);
 
     const profileForm = document.getElementById('profile-form');
     if (profileForm) profileForm.addEventListener('submit', handleProfileUpdate);
-
+    
     const logoutLink = document.getElementById('logout-link');
     if (logoutLink) logoutLink.addEventListener('click', handleLogout);
 
-    // Paciente
+    // Event listeners for patient portal
     const patientLoginForm = document.getElementById('patient-login-form');
-    if (patientLoginForm) patientLoginForm.addEventListener('submit', handlePatientLogin);
+    if (patientLoginForm) {
+        patientLoginForm.addEventListener('submit', handlePatientLogin);
+    }
+
+    if (window.location.pathname.includes('/patient/dashboard')) {
+        loadPatientDashboard();
+    }
+
+
+    if (document.getElementById('patient-plan-form')) {
+        console.log("Formulario de Evaluación: DOMContentLoaded disparado.");
+        const tagifyElements = [
+            { selector: 'input[name="allergies"]', id: 'allergies' },
+            { selector: 'input[name="intolerances"]', id: 'intolerances' },
+            { selector: 'input[name="preferences"]', id: 'preferences' },
+            { selector: 'input[name="aversions"]', id: 'aversions' }
+        ];
+        window.tagifyInstances = {};
+        tagifyElements.forEach(item => {
+            const input = document.querySelector(item.selector);
+            if (input) {
+                try { window.tagifyInstances[item.id] = new Tagify(input); }
+                catch (e) { console.error(`Falló Tagify para ${item.id}:`, e); }
+            }
+        });
+
+        const serverContextAction = window.serverContextAction;
+        const serverContextEvaluationData = window.serverContextEvaluationData;
+        
+        if ((serverContextAction === 'edit_evaluation' || serverContextAction === 'load_eval_for_new') && serverContextEvaluationData) {
+            console.log("Formulario de Evaluación: Modo EDICIÓN con datos del servidor.");
+            populatePreloadForm(serverContextEvaluationData, 'edit_evaluation');
+            const saveButton = document.getElementById('btn-finalizar');
+            if (saveButton) saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cambios';
+        } else {
+            console.log("Formulario de Evaluación: Modo NUEVO.");
+            if (document.getElementById('base-foods-container')) {
+                addBaseFoodRow();
+            }
+        }
+
+        const watch = ["height_cm", "weight_at_plan", "wrist_circumference_cm", "waist_circumference_cm", "hip_circumference_cm", "dob", "sex", "activity_factor"];
+        watch.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener("change", calcularValores);
+        });
+
+        const btnLoadRelevantPreps = document.getElementById("btn-load-relevant-preparations");
+        if (btnLoadRelevantPreps) btnLoadRelevantPreps.addEventListener("click", loadRelevantPreparationsForPatient);
+
+        const btnGenerarPlanIA = document.getElementById("btn-generar-plan");
+        if (btnGenerarPlanIA) btnGenerarPlanIA.addEventListener("click", generarPlan);
+
+        const finalizarButton = document.getElementById('btn-finalizar');
+        if (finalizarButton) finalizarButton.addEventListener('click', finalizar);
+    }
+
+    const btnAddBaseFood = document.getElementById('btn-add-base-food');
+    if (btnAddBaseFood) {
+        btnAddBaseFood.addEventListener('click', () => addBaseFoodRow());
+    }
+
+    const dashboardContainer = document.getElementById('patientSearchResultsDashboard');
+    if (dashboardContainer) {
+        initializeDashboard();
+    }
+
+    const profileCountrySelect = document.getElementById('profile-country');
+    const profilePhoneCodeSelect = document.getElementById('profile-phone-code');
+    console.log("DEBUG: Checking for profileCountrySelect and profilePhoneCodeSelect elements.");
+    if (profileCountrySelect && profilePhoneCodeSelect) {
+        console.log("DEBUG: Profile country and phone code selects found. Attaching event listener.");
+        profileCountrySelect.addEventListener('change', () => {
+            console.log("DEBUG: Country select changed!");
+            const selectedOption = profileCountrySelect.options[profileCountrySelect.selectedIndex];
+            const phoneCode = selectedOption.dataset.phoneCode;
+            console.log("DEBUG: Selected country option value:", selectedOption.value);
+            console.log("DEBUG: Extracted phoneCode from dataset:", phoneCode);
+            if (phoneCode) {
+                profilePhoneCodeSelect.value = phoneCode;
+                console.log("DEBUG: Phone code select value set to:", profilePhoneCodeSelect.value);
+            } else {
+                profilePhoneCodeSelect.value = '';
+                console.log("DEBUG: No phone code found in dataset, clearing phone code select.");
+            }
+        });
+    }
+});
+
+
+// Al final de /home/william-baptista/NutriApp/static/js/main.js
+
+document.addEventListener('DOMContentLoaded', function() {
     const inviteButton = document.getElementById('invite-patient-btn');
     if (inviteButton) {
         inviteButton.addEventListener('click', function() {
@@ -1253,75 +1276,6 @@ function initializeEventListeners() {
             });
         });
     }
-
-    // Dashboard Nutricionista
-    const dashboardContainer = document.getElementById('patientSearchResultsDashboard');
-    if (dashboardContainer) initializeDashboard();
-
-    // Formulario de Evaluación
-    if (document.getElementById('patient-plan-form')) {
-        initializeEvaluationForm();
-    }
-
-    // Perfil de Nutricionista
-    const profileCountrySelect = document.getElementById('profile-country');
-    const profilePhoneCodeSelect = document.getElementById('profile-phone-code');
-    if (profileCountrySelect && profilePhoneCodeSelect) {
-        profileCountrySelect.addEventListener('change', () => {
-            const selectedOption = profileCountrySelect.options[profileCountrySelect.selectedIndex];
-            const phoneCode = selectedOption.dataset.phoneCode;
-            profilePhoneCodeSelect.value = phoneCode || '';
-        });
-    }
-}
-
-function initializeEvaluationForm() {
-    console.log("Formulario de Evaluación: DOMContentLoaded disparado.");
-    const tagifyElements = [
-        { selector: 'input[name="allergies"]', id: 'allergies' },
-        { selector: 'input[name="intolerances"]', id: 'intolerances' },
-        { selector: 'input[name="preferences"]', id: 'preferences' },
-        { selector: 'input[name="aversions"]', id: 'aversions' }
-    ];
-    window.tagifyInstances = {};
-    tagifyElements.forEach(item => {
-        const input = document.querySelector(item.selector);
-        if (input) {
-            try { window.tagifyInstances[item.id] = new Tagify(input); }
-            catch (e) { console.error(`Falló Tagify para ${item.id}:`, e); }
-        }
-    });
-
-    const serverContextAction = window.serverContextAction;
-    const serverContextEvaluationData = window.serverContextEvaluationData;
-
-    if ((serverContextAction === 'edit_evaluation' || serverContextAction === 'load_eval_for_new') && serverContextEvaluationData) {
-        console.log("Formulario de Evaluación: Modo EDICIÓN con datos del servidor.");
-        populatePreloadForm(serverContextEvaluationData, 'edit_evaluation');
-        const saveButton = document.getElementById('btn-finalizar');
-        if (saveButton) saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cambios';
-    } else {
-        console.log("Formulario de Evaluación: Modo NUEVO.");
-        if (document.getElementById('base-foods-container')) addBaseFoodRow();
-    }
-
-    const watch = ["height_cm", "weight_at_plan", "wrist_circumference_cm", "waist_circumference_cm", "hip_circumference_cm", "dob", "sex", "activity_factor"];
-    watch.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener("change", calcularValores);
-    });
-
-    document.getElementById("btn-load-relevant-preparations")?.addEventListener("click", loadRelevantPreparationsForPatient);
-    document.getElementById("btn-generar-plan")?.addEventListener("click", generarPlan);
-    document.getElementById('btn-finalizar')?.addEventListener('click', finalizar);
-    document.getElementById('btn-add-base-food')?.addEventListener('click', () => addBaseFoodRow());
-}
-
-// --- DOMContentLoaded Listener ---
-document.addEventListener("DOMContentLoaded", () => {
-    onAuthStateChanged(auth, handleAuthStateChange);
-    initializeEventListeners();
-    if (window.location.pathname.includes('/patient/dashboard')) loadPatientDashboard();
 });
 
 console.log("DEBUG_UI: main.js loaded.");

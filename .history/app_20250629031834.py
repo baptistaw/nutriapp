@@ -225,7 +225,6 @@ class User(UserMixin, db.Model):
 class Patient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    firebase_uid = db.Column(db.String(128), unique=True, nullable=True, index=True) # Vínculo con Firebase Auth
     # Identificación y Datos Filiatorios
     name = db.Column(db.String(80), nullable=False)
     surname = db.Column(db.String(80), nullable=False)
@@ -3001,44 +3000,6 @@ def invitar_paciente(patient_id):
         db.session.rollback()
         return jsonify({'error': f'Error interno al procesar la invitación: {str(e)}'}), 500
     
-
-# --- Rutas para el Portal del Paciente (Renderizado de Vistas) ---
-
-@app.route('/patient/login')
-def patient_login_page():
-    """Renderiza la página de login para el paciente."""
-    return render_template('patient_login.html')
-
-@app.route('/patient/dashboard')
-def patient_dashboard_page():
-    """
-    Renderiza el dashboard principal del paciente. 
-    La página es un esqueleto; los datos se cargarán vía JavaScript usando una API protegida.
-    """
-    return render_template('patient_dashboard.html')
-
-
-# --- API para el Portal del Paciente ---
-
-@app.route('/api/patient/me/latest_plan')
-@patient_auth_required # Este decorador maneja la autenticación y carga g.patient
-def get_my_latest_plan():
-    """API para que un paciente logueado obtenga su último plan."""
-    patient = g.patient
-    app.logger.info(f"API: Solicitud de último plan para Paciente ID {patient.id}")
-
-    latest_evaluation = patient.evaluations.order_by(Evaluation.consultation_date.desc()).first()
-
-    if not latest_evaluation or not latest_evaluation.edited_plan_text:
-        return jsonify({'message': 'Aún no tienes un plan de alimentación disponible.'}), 404
-
-    return jsonify({
-        'patient_name': f"{patient.name} {patient.surname}",
-        'consultation_date': latest_evaluation.consultation_date.strftime('%d/%m/%Y'),
-        'plan_text': latest_evaluation.edited_plan_text,
-        'nutritionist_observations': latest_evaluation.user_observations or "Sin observaciones adicionales."
-    })
-
 @app.route('/guardar_evaluacion', methods=['POST'])
 @login_required
 def guardar_evaluacion():

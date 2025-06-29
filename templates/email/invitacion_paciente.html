@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Invitación a NutriApp</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6;">
+    <h2>¡Hola, {{ patient_name }}!</h2>
+    <p>Has sido invitado/a a unirte a NutriApp para seguir tu progreso nutricional.</p>
+    <p>Para comenzar, por favor, haz clic en el siguiente enlace para configurar la contraseña de tu cuenta:</p>
+    <p style="text-align: center;">
+        <a href="{{ action_url }}" style="background-color: #4CAF50; color: white; padding: 14px 25px; text-align: center; text-decoration: none; display: inline-block; border-radius: 8px;">Configurar mi Contraseña</a>
+    </p>
+    <p>Si no puedes hacer clic en el botón, copia y pega la siguiente URL en tu navegador:</p>
+    <p><a href="{{ action_url }}">{{ action_url }}</a></p>
+    <p>¡Esperamos verte pronto!</p>
+    <p>El equipo de NutriApp</p>
+</body>
+</html>

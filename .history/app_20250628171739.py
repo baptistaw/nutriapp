@@ -22,7 +22,6 @@ from flask_wtf.csrf import CSRFProtect
 from firebase_admin import credentials, auth
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from urllib.parse import urlparse, urljoin
 
 # Google / Gemini Imports
 import google.generativeai as genai
@@ -52,48 +51,16 @@ migrate = Migrate(app, db)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login_page'
-import logging
-import subprocess
-
-class CustomErrorHandler(logging.FileHandler):
-    def emit(self, record):
-        super().emit(record)
-        if record.levelno >= logging.ERROR:
-            try:
-                subprocess.run(["python", "export_last_traceback.py"])
-            except Exception as e:
-                print("Error al ejecutar el script de extracción de traceback:", e)
-
-# Inicializar logging con el handler personalizado
-handler = CustomErrorHandler('error.log')
-handler.setLevel(logging.ERROR)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-
-app.logger.addHandler(handler)
-app.logger.setLevel(logging.ERROR)
-
-@app.errorhandler(Exception)
-def manejar_excepcion(e):
-    app.logger.exception("Excepción capturada:")
-    return "Error interno del servidor", 500
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-def is_safe_url(target: str) -> bool:
-    """Return True if the URL is safe to redirect to."""
-    ref_url = urlparse(request.host_url)
-    test_url = urlparse(urljoin(request.host_url, target))
-    return (
-        test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc
-    )
-
 # Explicitly set logger level for debugging
 app.logger.setLevel(logging.DEBUG)
 app.logger.info("Flask logger level set to DEBUG.") # Test log
 
+# --- Configuración APIs ---
 try:
     if app.config['GEMINI_API_KEY']:
         genai.configure(api_key=app.config['GEMINI_API_KEY']) # type: ignore
@@ -146,42 +113,6 @@ def firebase_auth_required(view_func):
 
     return wrapped_view
 
-# --- Decorador de Autenticación Firebase para PACIENTES ---
-def patient_auth_required(view_func):
-    """
-    Verifica el token de Firebase y asegura que el UID corresponda a un Paciente
-    y que el paciente solo acceda a sus propios datos.
-    """
-    @wraps(view_func)
-    def wrapped_view(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return jsonify({"error": "Token de autenticación de paciente faltante"}), 401
-
-        id_token = auth_header.split(" ", 1)[1]
-        try:
-            decoded = auth.verify_id_token(id_token)
-            firebase_uid = decoded.get("uid")
-        except Exception as e:
-            app.logger.error(f"Error verificando token Firebase de paciente: {e}")
-            return jsonify({"error": "Token de paciente inválido o expirado"}), 401
-
-        # Buscar al paciente en nuestra base de datos local por su UID de Firebase
-        patient = Patient.query.filter_by(firebase_uid=firebase_uid).first()
-        if not patient:
-            return jsonify({"error": "Paciente no encontrado para este token"}), 401
-
-        # **Paso de autorización crucial**
-        # Asegurarse de que el ID del paciente en la URL coincida con el ID del paciente autenticado
-        url_patient_id = kwargs.get('patient_id')
-        if url_patient_id and patient.id != url_patient_id:
-            app.logger.warning(f"Acceso denegado: Paciente UID {firebase_uid} (ID: {patient.id}) intentó acceder a datos del Paciente ID {url_patient_id}.")
-            return jsonify({"error": "Acceso prohibido. Solo puedes acceder a tus propios datos."}), 403
-
-        g.patient = patient  # Hacer que el objeto paciente esté disponible en la ruta
-        return view_func(*args, **kwargs)
-
-    return wrapped_view
 # --- Procesador de Contexto ---
 @app.context_processor
 def inject_now():
@@ -204,7 +135,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     patients = db.relationship('Patient', backref='nutritionist', lazy=True)
-    preparations = db.relationship('UserPreparation', back_populates='user', lazy=True)
+    preparations = db.relationship('UserPreparation', backref='user', lazy=True)
 
     def to_dict(self):
         return {
@@ -225,7 +156,6 @@ class User(UserMixin, db.Model):
 class Patient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    firebase_uid = db.Column(db.String(128), unique=True, nullable=True, index=True) # Vínculo con Firebase Auth
     # Identificación y Datos Filiatorios
     name = db.Column(db.String(80), nullable=False)
     surname = db.Column(db.String(80), nullable=False)
@@ -508,7 +438,7 @@ class UserPreparation(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
-    user = db.relationship('User', back_populates='preparations')
+    user = db.relationship('User', backref=db.backref('user_preparations', lazy=True))
 
     def set_ingredients(self, ingredients_list):
         self.ingredients_json = json.dumps(ingredients_list)
@@ -1796,7 +1726,7 @@ def parse_all_recipes_from_text_block(recetario_text):
 
     # Dividir el texto en bloques de recetas individuales.
     # El lookahead positivo (?=...) asegura que el delimitador "Receta N°X:" se mantenga al inicio de cada bloque subsiguiente.
-    recipe_blocks_raw = re.split(r"\n(?=\s*\**\s*Receta\s*(?:N°|No\.|N\.)?\s*\d+:)", clean_recetario_text, flags=re.IGNORECASE)
+    recipe_blocks_raw = re.split(r"\n(?=Receta\s*(?:N°|No\.|N\.)?\s*\d+:\s*)", clean_recetario_text, flags=re.IGNORECASE)
     app.logger.debug(f"Bloques crudos después del split inicial: {len(recipe_blocks_raw)}")
 
     for i, block_text_raw in enumerate(recipe_blocks_raw):
@@ -2317,17 +2247,15 @@ def enviar_email_con_adjunto(destinatario, asunto, cuerpo_html, pdf_buffer, nomb
     msg['To'] = destinatario
     msg['Subject'] = asunto
     msg.attach(MIMEText(cuerpo_html, 'html', 'utf-8'))
-
-    # Modificado para manejar el caso donde no hay adjunto
-    if pdf_buffer and nombre_archivo_pdf:
-        pdf_buffer.seek(0)
-        pdf_content = pdf_buffer.read()
-        if pdf_content:
-            part = MIMEBase('application', 'octet-stream')
-            part.set_payload(pdf_content)
-            encoders.encode_base64(part)
-            part.add_header('Content-Disposition', f'attachment; filename="{nombre_archivo_pdf}"')
-            msg.attach(part)
+    
+    pdf_buffer.seek(0)
+    pdf_content = pdf_buffer.read()
+    if pdf_content:
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(pdf_content)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{nombre_archivo_pdf}"')
+        msg.attach(part)
     
     try:
         server = None
@@ -2360,129 +2288,9 @@ def index():
     app.logger.info("Acceso a la raíz, redirigiendo al dashboard de pacientes.")
     return redirect(url_for('pacientes_dashboard'))
 
-@app.route('/formulario_evaluacion', methods=['GET'])
-@login_required
-def formulario_evaluacion():
-    """Renderiza la página para crear una evaluación o cargar una previa."""
-    action = request.args.get('action', 'new_evaluation_new_patient')
-    eval_id_str = request.args.get('load_evaluation_id')
-    evaluation_data = None
-
-    if action in ('edit_evaluation', 'load_eval_for_new') and eval_id_str:
-        try:
-            eval_id = int(eval_id_str)
-            evaluation = Evaluation.query.get(eval_id)
-            if evaluation and evaluation.patient:
-                patient = evaluation.patient
-                evaluation_data = {
-                    'patient_id': patient.id,
-                    'name': patient.name,
-                    'surname': patient.surname,
-                    'cedula': patient.cedula,
-                    'email': patient.email,
-                    'phone_number': patient.phone_number,
-                    'education_level': patient.education_level,
-                    'purchasing_power': patient.purchasing_power,
-                    'dob': patient.dob.strftime('%Y-%m-%d') if patient.dob else None,
-                    'sex': patient.sex,
-                    'height_cm': patient.height_cm,
-                    'allergies': patient.get_allergies(),
-                    'intolerances': patient.get_intolerances(),
-                    'preferences': patient.get_preferences(),
-                    'aversions': patient.get_aversions(),
-
-                    'evaluation_id': evaluation.id,
-                    'consultation_date': evaluation.consultation_date.isoformat(),
-                    'weight_at_eval': evaluation.weight_at_eval,
-                    'wrist_circumference_cm': evaluation.wrist_circumference_cm,
-                    'waist_circumference_cm': evaluation.waist_circumference_cm,
-                    'hip_circumference_cm': evaluation.hip_circumference_cm,
-                    'gestational_age_weeks': evaluation.gestational_age_weeks,
-                    'activity_factor': evaluation.activity_factor,
-                    'pathologies': evaluation.get_pathologies(),
-                    'other_pathologies_text': evaluation.other_pathologies_text,
-                    'postoperative_text': evaluation.postoperative_text,
-                    'diet_type': evaluation.diet_type,
-                    'other_diet_type_text': evaluation.other_diet_type_text,
-                    'target_weight': evaluation.target_weight,
-                    'target_waist_cm': evaluation.target_waist_cm,
-                    'target_protein_perc': evaluation.target_protein_perc,
-                    'target_carb_perc': evaluation.target_carb_perc,
-                    'target_fat_perc': evaluation.target_fat_perc,
-                    'edited_plan_text': evaluation.edited_plan_text,
-                    'user_observations': evaluation.user_observations,
-                    'micronutrients': evaluation.get_micronutrients(),
-                    'base_foods': evaluation.get_base_foods(),
-                    'references': evaluation.references,
-                }
-        except ValueError:
-            app.logger.warning('ID de evaluación inválido para cargar datos')
-
-    all_ingredients = Ingredient.query.order_by(Ingredient.name).all()
-    ingredients_for_js = [{'id': ing.id, 'name': ing.name} for ing in all_ingredients]
-
-    return render_template(
-        'formulario_evaluacion.html',
-        all_ingredients=ingredients_for_js,
-        current_date_str=datetime.now(timezone.utc).strftime('%d/%m/%Y'),
-        current_username=current_user.name or current_user.email,
-        education_levels=app.config.get('EDUCATION_LEVELS', []),
-        purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []),
-        activity_factors=app.config.get('ACTIVITY_FACTORS', []),
-        available_pathologies=app.config.get('AVAILABLE_PATHOLOGIES', []),
-        diet_types=app.config.get('DIET_TYPES', []),
-        action=action,
-        evaluation_data_to_load=evaluation_data
-    )
-
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/login')
 def login_page():
-    if request.method == 'POST':
-        id_token = request.form.get('idToken')
-        if not id_token:
-            flash('Token de autenticación faltante.', 'danger')
-            return redirect(url_for('login_page'))
-        try:
-            decoded = auth.verify_id_token(id_token)
-        except Exception as e:  # pragma: no cover - logging
-            app.logger.error(f'Error verificando token Firebase: {e}')
-            flash('Token de autenticación inválido.', 'danger')
-            return redirect(url_for('login_page'))
-
-        firebase_uid = decoded.get('uid')
-        email = decoded.get('email')
-        full_name = decoded.get('name', '')
-
-        user = User.query.filter_by(firebase_uid=firebase_uid).first()
-        if not user:
-            user = User.query.filter_by(email=email).first()
-            if user:
-                user.firebase_uid = firebase_uid
-            else:
-                name = ''
-                surname = ''
-                if full_name:
-                    parts = full_name.split(' ', 1)
-                    name = parts[0]
-                    if len(parts) > 1:
-                        surname = parts[1]
-                user = User(firebase_uid=firebase_uid, email=email, name=name, surname=surname)
-                db.session.add(user)
-            db.session.commit()
-
-        login_user(user)
-
-        next_url = request.args.get('next')
-        if next_url and is_safe_url(next_url):
-            return redirect(next_url)
-        return redirect(url_for('pacientes_dashboard'))
-
     return render_template('login.html')
-
-# Route for registration page
-@app.route('/register')
-def register_page():
-    return render_template('register.html')
 # En app.py, añade esta nueva ruta:
 
 @app.route('/api/preparations', methods=['POST'])
@@ -2949,98 +2757,7 @@ def generar_plan_endpoint():
         app.logger.error(f"Error inesperado en /generar_plan: {e}", exc_info=True)
         traceback.print_exc() 
         return jsonify({'error': 'Ocurrió un error inesperado al generar el plan.'}), 500
-
-
-@app.route('/paciente/<int:patient_id>/invitar', methods=['POST'])
-@login_required
-def invitar_paciente(patient_id):
-    """
-    Crea un usuario en Firebase para un paciente existente y le envía un email de invitación.
-    """
-    app.logger.info(f"Recibida solicitud para invitar al paciente ID: {patient_id}")
-    patient = Patient.query.filter_by(id=patient_id, user_id=current_user.id).first_or_404()
-
-    if not patient.email:
-        app.logger.error(f"Intento de invitar al paciente ID {patient.id} sin email.")
-        return jsonify({'error': 'El paciente no tiene un email registrado para poder invitarlo.'}), 400
-
-    if patient.firebase_uid:
-        app.logger.warning(f"Intento de invitar a un paciente ya invitado. Paciente ID: {patient.id}, UID: {patient.firebase_uid}")
-        return jsonify({'error': 'Este paciente ya ha sido invitado y tiene una cuenta asociada.'}), 409
-
-    try:
-        # 1. Crear el usuario en Firebase Authentication
-        app.logger.info(f"Creando usuario en Firebase para el email: {patient.email}")
-        new_firebase_user = auth.create_user(
-            email=patient.email,
-            email_verified=False,
-            display_name=f"{patient.name} {patient.surname}",
-            disabled=False
-        )
-        app.logger.info(f"Usuario creado en Firebase con UID: {new_firebase_user.uid}")
-
-        # 2. Vincular el UID de Firebase con el paciente en la base de datos local
-        patient.firebase_uid = new_firebase_user.uid
-        db.session.commit()
-        app.logger.info(f"UID de Firebase vinculado al Paciente ID {patient.id} en la base de datos local.")
-
-        # 3. Generar enlace para establecer contraseña y enviar email
-        link = auth.generate_password_reset_link(patient.email)
-        asunto = "¡Bienvenido/a a NutriApp! Configura tu cuenta."
-        cuerpo_html = render_template('email/invitacion_paciente.html', patient_name=patient.name, action_url=link)
-        
-        enviado = enviar_email_con_adjunto(patient.email, asunto, cuerpo_html, None, None)
-
-        if enviado:
-            return jsonify({'message': f'Invitación enviada exitosamente a {patient.email}.'}), 200
-        else:
-            return jsonify({'error': 'Se creó la cuenta pero no se pudo enviar el email de invitación.'}), 500
-
-    except Exception as e:
-        app.logger.error(f"Error al invitar al paciente ID {patient.id}: {e}", exc_info=True)
-        db.session.rollback()
-        return jsonify({'error': f'Error interno al procesar la invitación: {str(e)}'}), 500
-    
-
-# --- Rutas para el Portal del Paciente (Renderizado de Vistas) ---
-
-@app.route('/patient/login')
-def patient_login_page():
-    """Renderiza la página de login para el paciente."""
-    return render_template('patient_login.html')
-
-@app.route('/patient/dashboard')
-def patient_dashboard_page():
-    """
-    Renderiza el dashboard principal del paciente. 
-    La página es un esqueleto; los datos se cargarán vía JavaScript usando una API protegida.
-    """
-    return render_template('patient_dashboard.html')
-
-
-# --- API para el Portal del Paciente ---
-
-@app.route('/api/patient/me/latest_plan')
-@patient_auth_required # Este decorador maneja la autenticación y carga g.patient
-def get_my_latest_plan():
-    """API para que un paciente logueado obtenga su último plan."""
-    patient = g.patient
-    app.logger.info(f"API: Solicitud de último plan para Paciente ID {patient.id}")
-
-    latest_evaluation = patient.evaluations.order_by(Evaluation.consultation_date.desc()).first()
-
-    if not latest_evaluation or not latest_evaluation.edited_plan_text:
-        return jsonify({'message': 'Aún no tienes un plan de alimentación disponible.'}), 404
-
-    return jsonify({
-        'patient_name': f"{patient.name} {patient.surname}",
-        'consultation_date': latest_evaluation.consultation_date.strftime('%d/%m/%Y'),
-        'plan_text': latest_evaluation.edited_plan_text,
-        'nutritionist_observations': latest_evaluation.user_observations or "Sin observaciones adicionales."
-    })
-
 @app.route('/guardar_evaluacion', methods=['POST'])
-@login_required
 def guardar_evaluacion():
     try:
         app.logger.info("Iniciando /guardar_evaluacion (NUEVA EVALUACIÓN)")
@@ -3125,7 +2842,6 @@ def guardar_evaluacion():
         else: 
             app.logger.info("Creando nuevo Paciente")
             paciente = Patient(**patient_fields_clean)
-            paciente.user_id = current_user.id
             paciente.set_allergies(plan_data.get('allergies', [])); paciente.set_intolerances(plan_data.get('intolerances', []))
             paciente.set_preferences(plan_data.get('preferences', [])); paciente.set_aversions(plan_data.get('aversions', []))
             db.session.add(paciente)
@@ -3161,7 +2877,6 @@ def guardar_evaluacion():
         app.logger.info(f"Creando NUEVA Evaluación para Paciente ID {paciente.id}")
         nueva_evaluacion = Evaluation(
             patient_id=paciente.id,
-            user_id=current_user.id,
             weight_at_eval=v_data.get('weight_at_eval'),
             wrist_circumference_cm=v_data.get('wrist_circumference_cm'),
             waist_circumference_cm=v_data.get('waist_circumference_cm'),
@@ -3374,12 +3089,8 @@ def guardar_evaluacion():
         return jsonify({'error': 'Error inesperado al guardar la evaluación.'}), 500
 
 @app.route('/actualizar_evaluacion/<int:evaluation_id>', methods=['PUT'])
-@login_required
 def actualizar_evaluacion_endpoint(evaluation_id):
     evaluation = Evaluation.query.get_or_404(evaluation_id)
-    if evaluation.user_id != current_user.id:
-        app.logger.error(f"Acceso denegado: Usuario {current_user.id} intentó editar evaluación {evaluation.id} del usuario {evaluation.user_id}.")
-        abort(403)
     patient = evaluation.patient
     if not patient:
         app.logger.error(f"Error crítico: Evaluación ID {evaluation_id} no tiene paciente asociado para actualizar.")
@@ -3476,7 +3187,6 @@ def actualizar_evaluacion_endpoint(evaluation_id):
         evaluation.set_micronutrients(micronutrients_to_set if micronutrients_to_set else evaluation.get_micronutrients())
         evaluation.set_base_foods(plan_data.get('base_foods', evaluation.get_base_foods()))
         evaluation.consultation_date = datetime.now(timezone.utc)
-        evaluation.user_id = current_user.id # Re-asegurar la propiedad
 
         db.session.commit()
 
@@ -3745,13 +3455,12 @@ def enviar_plan_email_route(evaluation_id):
 # --- Rutas API para la App del Paciente ---
 
 @app.route('/api/patient/<int:patient_id>/weight', methods=['GET', 'POST'])
-@patient_auth_required
 def patient_weight_api(patient_id):
-    patient = g.patient # El paciente ya fue verificado y cargado por el decorador
+    patient = Patient.query.get_or_404(patient_id)
 
     if request.method == 'GET':
         # Obtener el historial de peso del paciente
-        weight_entries = patient.weight_history.order_by(WeightEntry.date.asc()).all()
+        weight_entries = WeightEntry.query.filter_by(patient_id=patient.id).order_by(WeightEntry.date.asc()).all()
         entries_data = [{'date': entry.date.strftime('%Y-%m-%d'), 'weight_kg': entry.weight_kg, 'notes': entry.notes} for entry in weight_entries]
         app.logger.info(f"API /patient/{patient_id}/weight - Obtenido historial de peso. {len(entries_data)} entradas.")
         return jsonify({'entries': entries_data})
@@ -3783,13 +3492,12 @@ def patient_weight_api(patient_id):
         return jsonify({'error': 'Método no permitido.'}), 405
 
 @app.route('/api/patient/<int:patient_id>/chat/messages', methods=['GET', 'POST']) # Puede ser por evaluación
-@patient_auth_required
 def patient_chat_api(patient_id):
-    patient = g.patient # El paciente ya fue verificado y cargado por el decorador
+    patient = Patient.query.get_or_404(patient_id)
 
     if request.method == 'GET':
         # Obtener historial de mensajes
-        messages = patient.chat_messages.order_by(ChatMessage.timestamp.asc()).limit(50).all()
+        messages = ChatMessage.query.filter_by(patient_id=patient.id).order_by(ChatMessage.timestamp.asc()).limit(50).all()
         messages_data = [{
             'id': msg.id,
             'sender_is_patient': msg.sender_is_patient,
@@ -3802,7 +3510,7 @@ def patient_chat_api(patient_id):
     elif request.method == 'POST':
         # Enviar un nuevo mensaje
         data = request.get_json()
-        if not data or 'content' not in data:  # 'content' es el nombre que usa el JS
+        if not data or 'content' not in data: # 'content' es el nombre que usa el JS
             return jsonify({'error': 'Mensaje vacío.'}), 400
 
         try:
@@ -3811,8 +3519,8 @@ def patient_chat_api(patient_id):
                 return jsonify({'error': 'Mensaje vacío.'}), 400
 
             new_message = ChatMessage(
-                patient_id=patient.id,
-                sender_is_patient=True, # Si la API es para pacientes, el emisor siempre es el paciente
+                patient_id=patient.id, 
+                sender_is_patient=True, # Desde la app del paciente, el emisor es 'patient'
                 message_text=message_text
                 # evaluation_id se puede añadir si el chat es específico de un plan
             )
@@ -3910,13 +3618,6 @@ def historial_paciente(patient_id):
                            education_levels=app.config.get('EDUCATION_LEVELS', []),
                            purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []))
 
-@app.route('/nutricionista_chat/<int:patient_id>')
-@login_required
-def nutricionista_chat_view(patient_id):
-    """Vista de chat para el nutricionista con un paciente específico."""
-    patient = Patient.query.filter_by(id=patient_id, user_id=current_user.id).first_or_404()
-    return render_template('nutricionista_chat.html', patient=patient)
-
 @app.route('/get_all_patients', methods=['GET'])
 @login_required
 def get_all_patients():
@@ -4001,14 +3702,7 @@ def editar_paciente(patient_id):
             else:
                 patient.dob = None
             patient.sex = sex
-
-            # --- Check for email uniqueness before assigning ---
-            if email and email != patient.email:
-                existing_patient_with_email = Patient.query.filter(Patient.email == email, Patient.id != patient_id).first()
-                if existing_patient_with_email:
-                    flash(f'El email "{email}" ya está en uso por otro paciente. Por favor, use uno diferente.', 'danger')
-                    return render_template('editar_paciente.html', patient=patient, education_levels=app.config['EDUCATION_LEVELS'], purchasing_power_levels=app.config['PURCHASING_POWER_LEVELS'])
-            patient.email = email or None
+            patient.email = email or None # '' se convierte en None
             patient.phone_number = phone_number or None
             patient.education_level = education_level or None
             patient.purchasing_power = purchasing_power or None
@@ -4100,20 +3794,16 @@ def editar_evaluacion_form(evaluation_id): # Renamed to avoid conflict, will onl
         'references': evaluation.references # Usar el property
     }
 
-    all_ingredients = Ingredient.query.order_by(Ingredient.name).all()
-    ingredients_for_js = [{'id': ing.id, 'name': ing.name} for ing in all_ingredients]
-
     return render_template('formulario_evaluacion.html',
-                           action='edit_evaluation',
-                           evaluation_data_to_load=evaluation_data_for_form,
+                           action='edit_evaluation', # Indicar la acción correcta
+                           evaluation_data_to_load=evaluation_data_for_form, # Pasar los datos directamente
                            activity_factors=app.config['ACTIVITY_FACTORS'],
                            available_pathologies=app.config['AVAILABLE_PATHOLOGIES'],
                            education_levels=app.config['EDUCATION_LEVELS'],
                            purchasing_power_levels=app.config['PURCHASING_POWER_LEVELS'],
                            diet_types=app.config['DIET_TYPES'],
-                           all_ingredients=ingredients_for_js,
-                           current_username=current_user.name or current_user.email,
-                           current_date_str=evaluation.consultation_date.strftime('%d/%m/%Y')
+                           current_username="Nutri_Demo", # O el usuario logueado
+                           current_date_str=evaluation.consultation_date.strftime('%d/%m/%Y') # Usar fecha de la evaluación
                            )
 
 
@@ -4578,36 +4268,13 @@ def create_ingredient():
 def update_ingredient(ingredient_id):
     ingredient = Ingredient.query.get_or_404(ingredient_id)
     data = request.get_json()
+    # ... (lógica de actualización completa aquí, similar a la de preparaciones) ...
+    # Por simplicidad, aquí solo actualizamos nombre y sinónimos
     new_name = data.get('name', '').strip()
     if new_name and new_name.lower() != ingredient.name.lower() and Ingredient.query.filter(Ingredient.name.ilike(new_name)).first():
         return jsonify({'error': 'Ya existe otro ingrediente con ese nombre.'}), 409
-
     ingredient.name = new_name if new_name else ingredient.name
     ingredient.set_synonyms(data.get('synonyms', []))
-
-    try:
-        calories = validate_numeric_field(data.get('calories'), "Calorías", min_val=0)
-        protein_g = validate_numeric_field(data.get('protein_g'), "Proteínas", min_val=0)
-        carb_g = validate_numeric_field(data.get('carb_g'), "Carbohidratos", min_val=0)
-        fat_g = validate_numeric_field(data.get('fat_g'), "Grasas", min_val=0)
-    except ValueError as ve:
-        return jsonify({'error': str(ve)}), 400
-
-    nutrient_entry = ingredient.nutrients.filter_by(reference_quantity=100.0, reference_unit='g').first()
-    if not nutrient_entry and any(v is not None for v in [calories, protein_g, carb_g, fat_g]):
-        nutrient_entry = IngredientNutrient(ingredient=ingredient, reference_quantity=100.0, reference_unit='g')
-        db.session.add(nutrient_entry)
-
-    if nutrient_entry:
-        if calories is not None:
-            nutrient_entry.calories = calories
-        if protein_g is not None:
-            nutrient_entry.protein_g = protein_g
-        if carb_g is not None:
-            nutrient_entry.carb_g = carb_g
-        if fat_g is not None:
-            nutrient_entry.fat_g = fat_g
-
     db.session.commit()
     return jsonify(ingredient.to_dict()), 200
 

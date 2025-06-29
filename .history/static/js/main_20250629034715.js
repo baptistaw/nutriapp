@@ -26,8 +26,7 @@ async function handleAuthStateChange(user) {
 
   // Get current path info
   const currentPath = window.location.pathname;
-   // CORRECCIÓN CRÍTICA: Usar '===' para evitar que '/patient/login' active esta lógica.
-  const isNutritionistAuthPage = currentPath === '/login' || currentPath === '/register';
+  const isNutritionistAuthPage = currentPath.includes('/login') || currentPath.includes('/register');
   const isPatientRoute = isPatientAppRoute(currentPath);
 
   if (user) { // User is authenticated with Firebase
@@ -1254,74 +1253,5 @@ function initializeEventListeners() {
         });
     }
 
-    // Dashboard Nutricionista
-    const dashboardContainer = document.getElementById('patientSearchResultsDashboard');
-    if (dashboardContainer) initializeDashboard();
-
-    // Formulario de Evaluación
-    if (document.getElementById('patient-plan-form')) {
-        initializeEvaluationForm();
-    }
-
-    // Perfil de Nutricionista
-    const profileCountrySelect = document.getElementById('profile-country');
-    const profilePhoneCodeSelect = document.getElementById('profile-phone-code');
-    if (profileCountrySelect && profilePhoneCodeSelect) {
-        profileCountrySelect.addEventListener('change', () => {
-            const selectedOption = profileCountrySelect.options[profileCountrySelect.selectedIndex];
-            const phoneCode = selectedOption.dataset.phoneCode;
-            profilePhoneCodeSelect.value = phoneCode || '';
-        });
-    }
-}
-
-function initializeEvaluationForm() {
-    console.log("Formulario de Evaluación: DOMContentLoaded disparado.");
-    const tagifyElements = [
-        { selector: 'input[name="allergies"]', id: 'allergies' },
-        { selector: 'input[name="intolerances"]', id: 'intolerances' },
-        { selector: 'input[name="preferences"]', id: 'preferences' },
-        { selector: 'input[name="aversions"]', id: 'aversions' }
-    ];
-    window.tagifyInstances = {};
-    tagifyElements.forEach(item => {
-        const input = document.querySelector(item.selector);
-        if (input) {
-            try { window.tagifyInstances[item.id] = new Tagify(input); }
-            catch (e) { console.error(`Falló Tagify para ${item.id}:`, e); }
-        }
-    });
-
-    const serverContextAction = window.serverContextAction;
-    const serverContextEvaluationData = window.serverContextEvaluationData;
-
-    if ((serverContextAction === 'edit_evaluation' || serverContextAction === 'load_eval_for_new') && serverContextEvaluationData) {
-        console.log("Formulario de Evaluación: Modo EDICIÓN con datos del servidor.");
-        populatePreloadForm(serverContextEvaluationData, 'edit_evaluation');
-        const saveButton = document.getElementById('btn-finalizar');
-        if (saveButton) saveButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cambios';
-    } else {
-        console.log("Formulario de Evaluación: Modo NUEVO.");
-        if (document.getElementById('base-foods-container')) addBaseFoodRow();
-    }
-
-    const watch = ["height_cm", "weight_at_plan", "wrist_circumference_cm", "waist_circumference_cm", "hip_circumference_cm", "dob", "sex", "activity_factor"];
-    watch.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener("change", calcularValores);
-    });
-
-    document.getElementById("btn-load-relevant-preparations")?.addEventListener("click", loadRelevantPreparationsForPatient);
-    document.getElementById("btn-generar-plan")?.addEventListener("click", generarPlan);
-    document.getElementById('btn-finalizar')?.addEventListener('click', finalizar);
-    document.getElementById('btn-add-base-food')?.addEventListener('click', () => addBaseFoodRow());
-}
-
-// --- DOMContentLoaded Listener ---
-document.addEventListener("DOMContentLoaded", () => {
-    onAuthStateChanged(auth, handleAuthStateChange);
-    initializeEventListeners();
-    if (window.location.pathname.includes('/patient/dashboard')) loadPatientDashboard();
-});
 
 console.log("DEBUG_UI: main.js loaded.");
