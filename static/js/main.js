@@ -1172,6 +1172,13 @@ async function loadPatientDashboard() {
                     </a>
                 </div>
             </div>`;
+
+        const chatBtn = document.getElementById('patient-chat-btn');
+        const chatContainer = document.getElementById('chat-btn-container');
+        if (chatBtn && chatContainer) {
+            chatBtn.href = `/patient_chat/${data.patient_id}`;
+            chatContainer.style.display = 'block';
+        }
     } catch (error) {
         console.error("Error loading patient dashboard:", error);
         dashboardContainer.innerHTML = `<div class="alert alert-danger">Error al cargar tu plan: ${error.message}</div>`;
