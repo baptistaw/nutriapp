@@ -3022,30 +3022,46 @@ def guardar_evaluacion():
 
         if paciente:
             app.logger.info(f"Actualizando datos Paciente ID {paciente.id}")
-            for key, value in patient_fields_clean.items(): setattr(paciente, key, value)
+            for key, value in patient_fields_clean.items():
+                setattr(paciente, key, value)
+
             paciente.set_allergies(plan_data.get('allergies', []))
             paciente.set_intolerances(plan_data.get('intolerances', []))
             paciente.set_preferences(plan_data.get('preferences', []))
             paciente.set_aversions(plan_data.get('aversions', []))
+
+            if paciente.user_id is None:
+                paciente.user_id = current_user.id
+                app.logger.info(
+                    f"Paciente existente sin usuario asignado. Asociando a usuario ID {current_user.id}."
+                )
+
             if email_from_form and paciente.email != email_from_form:
-                existing_patient_by_email = Patient.query.filter(Patient.email == email_from_form, Patient.id != paciente.id).first()
+                existing_patient_by_email = Patient.query.filter(
+                    Patient.email == email_from_form,
+                    Patient.id != paciente.id
+                ).first()
                 if existing_patient_by_email:
                     return jsonify({'error': f"El email '{email_from_form}' ya está registrado para otro paciente. No se puede actualizar."}), 400
 
-            # Asegurar que el paciente tenga cuenta en Firebase si tiene email
             if not paciente.firebase_uid and paciente.email:
-                try:
-                    fb_user = auth.get_user_by_email(paciente.email)
-                except Exception:
-                    fb_user = auth.create_user(
-                        email=paciente.email,
-                        password=cedula,
-                        display_name=f"{paciente.name} {paciente.surname}"
+                if firebase_admin._apps:
+                    try:
+                        fb_user = auth.get_user_by_email(paciente.email)
+                    except Exception:
+                        fb_user = auth.create_user(
+                            email=paciente.email,
+                            password=cedula,
+                            display_name=f"{paciente.name} {paciente.surname}"
+                        )
+                    paciente.firebase_uid = fb_user.uid
+                    app.logger.info(
+                        f"Cuenta Firebase asociada al paciente existente {paciente.email} con UID {fb_user.uid}"
                     )
-                paciente.firebase_uid = fb_user.uid
-                app.logger.info(
-                    f"Cuenta Firebase asociada al paciente existente {paciente.email} con UID {fb_user.uid}"
-                )
+                else:
+                    app.logger.warning(
+                        "Firebase Admin SDK no inicializado. No se pudo crear/obtener usuario para el paciente existente."
+                    )
         else:
             app.logger.info("Creando nuevo Paciente")
             paciente = Patient(**patient_fields_clean)
@@ -3056,18 +3072,23 @@ def guardar_evaluacion():
 
             # Crear cuenta en Firebase si se proporciona email
             if paciente.email:
-                try:
-                    fb_user = auth.create_user(
-                        email=paciente.email,
-                        password=cedula,
-                        display_name=f"{paciente.name} {paciente.surname}"
+                if firebase_admin._apps:
+                    try:
+                        fb_user = auth.create_user(
+                            email=paciente.email,
+                            password=cedula,
+                            display_name=f"{paciente.name} {paciente.surname}"
+                        )
+                        paciente.firebase_uid = fb_user.uid
+                        app.logger.info(
+                            f"Cuenta Firebase creada para paciente {paciente.email} con UID {fb_user.uid}"
+                        )
+                    except Exception as fb_err:
+                        app.logger.error(f"Error creando usuario Firebase: {fb_err}")
+                else:
+                    app.logger.warning(
+                        "Firebase Admin SDK no inicializado. No se pudo crear usuario para el nuevo paciente."
                     )
-                    paciente.firebase_uid = fb_user.uid
-                    app.logger.info(
-                        f"Cuenta Firebase creada para paciente {paciente.email} con UID {fb_user.uid}"
-                    )
-                except Exception as fb_err:
-                    app.logger.error(f"Error creando usuario Firebase: {fb_err}")
         db.session.commit() 
         app.logger.info(f"Paciente ID {paciente.id} listo.")
 
