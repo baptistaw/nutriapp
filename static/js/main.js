@@ -1167,9 +1167,6 @@ async function loadPatientDashboard() {
                     <hr>
                     <h6 class="mt-4">Observaciones del Nutricionista:</h6>
                     <p class="text-muted fst-italic">${data.nutritionist_observations}</p>
-                    <a href="/patient_chat/${data.patient_id}" class="btn btn-success mt-3">
-                        <i class="fas fa-comments"></i> Ir al Chat
-                    </a>
                 </div>
             </div>`;
 
@@ -1177,7 +1174,7 @@ async function loadPatientDashboard() {
         const chatContainer = document.getElementById('chat-btn-container');
         if (chatBtn && chatContainer) {
             chatBtn.href = `/patient_chat/${data.patient_id}`;
-            chatContainer.style.display = 'block';
+            chatContainer.classList.remove('d-none');
         }
     } catch (error) {
         console.error("Error loading patient dashboard:", error);
