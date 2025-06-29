@@ -3037,6 +3037,12 @@ def patient_dashboard_page():
     """
     return render_template('patient_dashboard.html')
 
+@app.route('/patient_chat/<int:patient_id>')
+def patient_chat_view(patient_id):
+    """Renderiza la interfaz de chat para el paciente."""
+    patient = Patient.query.get_or_404(patient_id)
+    return render_template('patient_chat.html', patient=patient)
+
 
 # --- API para el Portal del Paciente ---
 
