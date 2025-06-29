@@ -305,6 +305,14 @@ class ChatMessage(db.Model):
     patient = db.relationship('Patient', backref=db.backref('chat_messages', lazy='dynamic'))
     evaluation = db.relationship('Evaluation', backref=db.backref('chat_messages', lazy='dynamic'))
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'sender_is_patient': self.sender_is_patient,
+            'message_text': self.message_text,
+            'timestamp': self.timestamp.isoformat()
+        }
+
 # *** NUEVO MODELO: Evaluation (reemplaza a Plan) ***
 class Evaluation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -1683,7 +1691,7 @@ def generar_plan_nutricional_v2(plan_input_data):
         temperature=0.7, 
         top_p=0.9,       
         top_k=40,        
-        max_output_tokens=16000 # Aumentado para permitir planes más largos
+        max_output_tokens=8000 # Aumentado para permitir planes más largos
     )
 
     texto_plan_estructura = ""
@@ -3845,6 +3853,50 @@ def patient_chat_api(patient_id):
             return jsonify({'error': 'Error al enviar el mensaje.'}), 500
     else:
         return jsonify({'error': 'Método no permitido.'}), 405
+
+# --- API para el Chat del Nutricionista ---
+
+@app.route('/api/nutricionista/chat/<int:patient_id>/messages', methods=['GET'])
+@login_required
+def get_nutricionista_chat_messages(patient_id):
+    # Verify the nutritionist owns this patient
+    patient = Patient.query.filter_by(id=patient_id, user_id=current_user.id).first_or_404()
+    
+    messages = patient.chat_messages.order_by(ChatMessage.timestamp.asc()).all()
+    messages_data = [msg.to_dict() for msg in messages]
+    
+    app.logger.info(f"API Nutri Chat: Obtenidos {len(messages_data)} mensajes para Paciente ID {patient_id}")
+    return jsonify({'messages': messages_data})
+
+@app.route('/api/nutricionista/chat/<int:patient_id>/messages', methods=['POST'])
+@login_required
+def send_nutricionista_chat_message(patient_id):
+    patient = Patient.query.filter_by(id=patient_id, user_id=current_user.id).first_or_404()
+    data = request.get_json()
+    
+    if not data or not data.get('content'):
+        return jsonify({'error': 'El contenido del mensaje no puede estar vacío.'}), 400
+        
+    message_text = data['content'].strip()
+    if not message_text:
+        return jsonify({'error': 'El contenido del mensaje no puede estar vacío.'}), 400
+
+    try:
+        new_message = ChatMessage(
+            patient_id=patient.id,
+            sender_is_patient=False, # El nutricionista está enviando
+            message_text=message_text
+        )
+        db.session.add(new_message)
+        db.session.commit()
+        app.logger.info(f"API Nutri Chat: Nuevo mensaje del nutricionista (ID: {current_user.id}) al Paciente ID {patient_id} guardado.")
+        
+        return jsonify(new_message.to_dict()), 201
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"API Nutri Chat: Error al guardar mensaje para Paciente ID {patient_id}: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno al guardar el mensaje.'}), 500
 
 # --- RUTAS EXISTENTES (Nutricionista) ---
 
