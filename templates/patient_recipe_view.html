@@ -50,7 +50,7 @@
 
     <hr class="my-4">
     <a href="{{ url_for('patient_plan', patient_id=patient.id, evaluation_id=evaluation.id) }}" class="btn btn-secondary">Volver al Plan</a>
-    <a href="{{ url_for('patient_dashboard', patient_id=patient.id) }}" class="btn btn-secondary">Volver al Dashboard</a>
+    <a href="{{ url_for('patient_dashboard_page') }}" class="btn btn-secondary">Volver al Dashboard</a>
 
 </div>
 {% endblock %}
