@@ -2948,6 +2948,7 @@ def generar_plan_endpoint():
         traceback.print_exc() 
         return jsonify({'error': 'Ocurrió un error inesperado al generar el plan.'}), 500
 @app.route('/guardar_evaluacion', methods=['POST'])
+@login_required
 def guardar_evaluacion():
     try:
         app.logger.info("Iniciando /guardar_evaluacion (NUEVA EVALUACIÓN)")
@@ -3029,9 +3030,10 @@ def guardar_evaluacion():
                 existing_patient_by_email = Patient.query.filter(Patient.email == email_from_form, Patient.id != paciente.id).first()
                 if existing_patient_by_email:
                     return jsonify({'error': f"El email '{email_from_form}' ya está registrado para otro paciente. No se puede actualizar."}), 400
-        else: 
+        else:
             app.logger.info("Creando nuevo Paciente")
             paciente = Patient(**patient_fields_clean)
+            paciente.user_id = current_user.id
             paciente.set_allergies(plan_data.get('allergies', [])); paciente.set_intolerances(plan_data.get('intolerances', []))
             paciente.set_preferences(plan_data.get('preferences', [])); paciente.set_aversions(plan_data.get('aversions', []))
             db.session.add(paciente)
@@ -3067,6 +3069,7 @@ def guardar_evaluacion():
         app.logger.info(f"Creando NUEVA Evaluación para Paciente ID {paciente.id}")
         nueva_evaluacion = Evaluation(
             patient_id=paciente.id,
+            user_id=current_user.id,
             weight_at_eval=v_data.get('weight_at_eval'),
             wrist_circumference_cm=v_data.get('wrist_circumference_cm'),
             waist_circumference_cm=v_data.get('waist_circumference_cm'),
@@ -3279,8 +3282,14 @@ def guardar_evaluacion():
         return jsonify({'error': 'Error inesperado al guardar la evaluación.'}), 500
 
 @app.route('/actualizar_evaluacion/<int:evaluation_id>', methods=['PUT'])
+@login_required
 def actualizar_evaluacion_endpoint(evaluation_id):
     evaluation = Evaluation.query.get_or_404(evaluation_id)
+    if evaluation.user_id != current_user.id:
+        app.logger.warning(
+            f"Usuario no autorizado: {current_user.id} intentando editar evaluacion {evaluation_id} perteneciente a {evaluation.user_id}"
+        )
+        return jsonify({'error': 'No autorizado'}), 403
     patient = evaluation.patient
     if not patient:
         app.logger.error(f"Error crítico: Evaluación ID {evaluation_id} no tiene paciente asociado para actualizar.")
@@ -3859,6 +3868,7 @@ def check_email_availability():
         return jsonify({'available': True, 'message': 'Email disponible'})
 
 @app.route('/paciente/<int:patient_id>/editar', methods=['GET', 'POST'])
+@login_required
 def editar_paciente(patient_id):
     patient = Patient.query.get_or_404(patient_id)
     if request.method == 'POST':
@@ -3943,6 +3953,7 @@ def editar_paciente(patient_id):
                            purchasing_power_levels=app.config['PURCHASING_POWER_LEVELS'])
 
 @app.route('/evaluacion/<int:evaluation_id>/editar', methods=['GET', 'POST'])
+@login_required
 def editar_evaluacion_form(evaluation_id): # Renamed to avoid conflict, will only handle GET
     evaluation = Evaluation.query.get_or_404(evaluation_id)
     patient = evaluation.patient
