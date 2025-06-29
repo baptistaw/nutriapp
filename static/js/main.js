@@ -12,7 +12,8 @@ let currentPlanDataBaseData = null;
 
 // --- Helper to check if it's a patient app route ---
 function isPatientAppRoute(pathname) {
-    return pathname.startsWith('/patient_app/');
+    // Patient portal routes start with '/patient/'.
+    return pathname.startsWith('/patient/');
 }
 
 // --- Core Authentication Handler ---
@@ -36,11 +37,25 @@ async function handleAuthStateChange(user) {
     // Store token for API calls
     try {
       const idToken = await user.getIdToken(true); // Force refresh
-      localStorage.setItem('authToken', idToken);
+      if (isPatientRoute) {
+          localStorage.setItem('patientAuthToken', idToken);
+      } else {
+          localStorage.setItem('authToken', idToken);
+      }
       console.log("AUTH_STATE: Firebase ID Token stored in localStorage.");
     } catch (error) {
       console.error("Error getting Firebase ID Token:", error);
       localStorage.removeItem('authToken');
+      localStorage.removeItem('patientAuthToken');
+    }
+
+    // --- Logic for Patient App ---
+    if (isPatientRoute) {
+        if (currentPath === '/patient/login') {
+            window.location.href = '/patient/dashboard';
+            return;
+        }
+        return; // Patient pages don't need further auth handling here
     }
 
     // --- Logic for Nutritionist App ---
@@ -109,6 +124,7 @@ async function handleAuthStateChange(user) {
   } else { // User is NOT authenticated with Firebase
     console.log("AUTH_STATE: Usuario no logueado en Firebase.");
     localStorage.removeItem('authToken');
+    localStorage.removeItem('patientAuthToken');
     console.log("AUTH_STATE: Firebase ID Token removed from localStorage.");
 
     // --- Logic for Nutritionist App ---
@@ -123,8 +139,8 @@ async function handleAuthStateChange(user) {
     // --- Logic for Patient App ---
     if (isPatientRoute) {
         console.log('User is not signed in to patient app. Redirecting to patient login.');
-        const loginUrl = `/patient_login?next=${encodeURIComponent(currentPath)}`;
-        window.location.href = loginUrl;
+        const loginUrl = `/patient/login?next=${encodeURIComponent(currentPath)}`;
+        if (currentPath !== '/patient/login') window.location.href = loginUrl;
     }
     // --- End of Logic for Patient App ---
   }
