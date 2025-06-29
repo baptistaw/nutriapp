@@ -41,31 +41,40 @@
         <span class="navbar-toggler-icon"></span>
       </button>
       <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        {% set is_patient_route = request.path.startswith('/patient/') %}
         <ul class="navbar-nav ms-auto">
-          <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'pacientes_dashboard' %}active{% endif %}" href="{{ url_for('pacientes_dashboard') }}"><i class="fas fa-users"></i> Dashboard Pacientes</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'mis_preparaciones_view' %}active{% endif %}" href="{{ url_for('mis_preparaciones_view') }}"><i class="fas fa-utensils"></i> Mis Preparaciones</a>
-          </li>
-           <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'mis_ingredientes_view' %}active{% endif %}" href="{{ url_for('mis_ingredientes_view') }}"><i class="fas fa-carrot"></i> Mis Ingredientes</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'formulario_evaluacion' %}active{% endif %}" href="{{ url_for('formulario_evaluacion') }}"><i class="fas fa-file-alt"></i> Nueva Evaluación</a>
-          </li>
-          <!-- Más enlaces si son necesarios -->
-          <li class="nav-item" id="register-container">
-            <a class="nav-link" href="{{ url_for('register_page') }}" id="register-link" style="display: none;"><i class="fas fa-user-plus"></i> Registrarse</a>
-          </li>
-          <li class="nav-item" id="profile-container">
-            <a class="nav-link" href="{{ url_for('profile_page') }}" id="profile-link" style="display: none;"><i class="fas fa-user-circle"></i> Mi Perfil</a>
-          </li>
-          <li class="nav-item" id="auth-container">
-            <a class="nav-link" href="{{ url_for('login_page') }}" id="login-link" style="display: none;"><i class="fas fa-sign-in-alt"></i> Iniciar Sesión</a>
-            <a class="nav-link" href="#" id="logout-link" style="display: none;"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</a>
-          </li>
-         </ul>
+          {% if is_patient_route %}
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'patient_dashboard_page' %}active{% endif %}" href="{{ url_for('patient_dashboard_page') }}"><i class="fas fa-home"></i> Mi Plan</a>
+            </li>
+            <li class="nav-item" id="auth-container">
+              <a class="nav-link" href="#" id="logout-link" style="display: none;"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</a>
+            </li>
+          {% else %}
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'pacientes_dashboard' %}active{% endif %}" href="{{ url_for('pacientes_dashboard') }}"><i class="fas fa-users"></i> Dashboard Pacientes</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'mis_preparaciones_view' %}active{% endif %}" href="{{ url_for('mis_preparaciones_view') }}"><i class="fas fa-utensils"></i> Mis Preparaciones</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'mis_ingredientes_view' %}active{% endif %}" href="{{ url_for('mis_ingredientes_view') }}"><i class="fas fa-carrot"></i> Mis Ingredientes</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'formulario_evaluacion' %}active{% endif %}" href="{{ url_for('formulario_evaluacion') }}"><i class="fas fa-file-alt"></i> Nueva Evaluación</a>
+            </li>
+            <li class="nav-item" id="register-container">
+              <a class="nav-link" href="{{ url_for('register_page') }}" id="register-link" style="display: none;"><i class="fas fa-user-plus"></i> Registrarse</a>
+            </li>
+            <li class="nav-item" id="profile-container">
+              <a class="nav-link" href="{{ url_for('profile_page') }}" id="profile-link" style="display: none;"><i class="fas fa-user-circle"></i> Mi Perfil</a>
+            </li>
+            <li class="nav-item" id="auth-container">
+              <a class="nav-link" href="{{ url_for('login_page') }}" id="login-link" style="display: none;"><i class="fas fa-sign-in-alt"></i> Iniciar Sesión</a>
+              <a class="nav-link" href="#" id="logout-link" style="display: none;"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</a>
+            </li>
+          {% endif %}
+        </ul>
       </div>
     </div>
   </nav>
