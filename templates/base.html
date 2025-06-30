@@ -43,6 +43,11 @@
       <div class="collapse navbar-collapse" id="navbarNavDropdown">
         {% set is_patient_route = request.path.startswith('/patient/') %}
         <ul class="navbar-nav ms-auto">
+          {% if user_profile %}
+          <li class="nav-item">
+            <span class="navbar-text">{{ user_profile['full_name'] }}</span>
+          </li>
+          {% endif %}
           {% if is_patient_route %}
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'patient_dashboard_page' %}active{% endif %}" href="{{ url_for('patient_dashboard_page') }}"><i class="fas fa-home"></i> Mi Plan</a>
