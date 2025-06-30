@@ -3890,6 +3890,13 @@ def patient_weight_api(patient_id):
     else:
         return jsonify({'error': 'Método no permitido.'}), 405
 
+
+@app.route('/api/patient/me/weight', methods=['GET', 'POST'])
+@patient_auth_required
+def patient_me_weight_api():
+    """Helper endpoint for the authenticated patient to manage their own weight history."""
+    return patient_weight_api(g.patient.id)
+
 @app.route('/api/patient/me/chat/messages', methods=['GET'])
 @patient_auth_required
 def get_my_chat_messages():
