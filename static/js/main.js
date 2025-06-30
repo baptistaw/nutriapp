@@ -1255,6 +1255,7 @@ function initializePatientChat() {
     const chatContainer = document.getElementById('patient-chat-container');
     const messageInput = document.getElementById('patientChatMessageInput');
     const sendButton = document.getElementById('sendPatientChatMessageButton');
+    const chatForm = document.getElementById('patientChatForm');
 
     if (!chatContainer || !messageInput || !sendButton) {
         console.error("Elementos del chat no encontrados en el modal.");
@@ -1269,6 +1270,12 @@ function initializePatientChat() {
                 sendPatientMessage(messageInput, chatContainer);
             }
         });
+        if (chatForm) {
+            chatForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                sendPatientMessage(messageInput, chatContainer);
+            });
+        }
         chatContainer.dataset.listenersAttached = 'true';
         console.log("Listeners del chat del paciente añadidos por primera vez.");
     }
