@@ -110,14 +110,14 @@
                         <p class="text-muted text-center my-auto">Cargando chat...</p>
                     </div>
                 </div>
-                <div class="modal-footer">
+                <form id="patientChatForm" class="modal-footer">
                     <div class="input-group">
-                        <input type="text" class="form-control" placeholder="Escribe tu mensaje..." id="patientChatMessageInput">
-                        <button class="btn btn-primary" type="button" id="sendPatientChatMessageButton"><i class="fas fa-paper-plane"></i> Enviar</button>
+                        <input type="text" class="form-control" placeholder="Escribe tu mensaje..." id="patientChatMessageInput" required>
+                        <button class="btn btn-primary" type="submit" id="sendPatientChatMessageButton"><i class="fas fa-paper-plane"></i> Enviar</button>
                     </div>
+                </form>
                 </div>
             </div>
         </div>
     </div>
-</div>
 {% endblock %}
