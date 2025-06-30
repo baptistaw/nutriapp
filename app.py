@@ -202,11 +202,15 @@ def inject_user_profile():
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    uid = db.Column(db.String(128), unique=True, nullable=False)
+    # Keep using the existing database column name for compatibility
+    uid = db.Column('firebase_uid', db.String(128), unique=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
-    
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
     patients = db.relationship('Patient', backref='nutritionist', lazy=True)
     preparations = db.relationship('UserPreparation', back_populates='user', lazy=True)
 
@@ -217,6 +221,7 @@ class User(UserMixin, db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
+
 
 # Modelo Patient (Datos relativamente estables)
 class Patient(db.Model):
