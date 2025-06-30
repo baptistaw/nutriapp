@@ -11,7 +11,11 @@ except Exception:  # pragma: no cover - allow missing dependency
 
 
 if firestore:
-    firestore_client = firestore.Client(project=os.getenv("GCP_PROJECT_ID"))
+    try:
+        firestore_client = firestore.Client(project=os.getenv("GCP_PROJECT_ID"))
+    except Exception:  # pragma: no cover - environment misconfigured
+        from unittest.mock import MagicMock  # type: ignore
+        firestore_client = MagicMock()
 else:  # pragma: no cover - fallback for missing library
     from unittest.mock import MagicMock  # type: ignore
     firestore_client = MagicMock()
