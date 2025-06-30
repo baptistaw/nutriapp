@@ -38,6 +38,7 @@ import re # Importar re para expresiones regulares
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import simpleSplit
+from backend.app import get_user_profile, update_user_profile as fs_update_user_profile
 from reportlab.lib import colors
 
 # Configuración Local
@@ -138,7 +139,7 @@ def firebase_auth_required(view_func):
             return jsonify({"error": "Token inválido"}), 401
 
         firebase_uid = decoded.get("uid")
-        user = User.query.filter_by(firebase_uid=firebase_uid).first()
+        user = User.query.filter_by(uid=firebase_uid).first()
         if not user:
             return jsonify({"error": "Usuario no registrado"}), 401
 
@@ -188,21 +189,23 @@ def patient_auth_required(view_func):
 def inject_now():
     return {'now': datetime.now(timezone.utc)}
 
+
+@app.context_processor
+def inject_user_profile():
+    if current_user.is_authenticated:
+        profile = get_user_profile(current_user.uid)
+    else:
+        profile = {}
+    return {'user_profile': profile}
+
 # --- Modelos de Base de Datos (SQLAlchemy) ---
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    firebase_uid = db.Column(db.String(128), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    name = db.Column(db.String(100))
-    surname = db.Column(db.String(100))
-    profession = db.Column(db.String(100))
-    license_number = db.Column(db.String(50))
-    city = db.Column(db.String(100))
-    country = db.Column(db.String(100))
-    address = db.Column(db.String(200))
-    phone_number = db.Column(db.String(50))
+    uid = db.Column(db.String(128), unique=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow)
     
     patients = db.relationship('Patient', backref='nutritionist', lazy=True)
     preparations = db.relationship('UserPreparation', back_populates='user', lazy=True)
@@ -210,16 +213,9 @@ class User(UserMixin, db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'firebase_uid': self.firebase_uid,
-            'email': self.email,
-            'name': self.name,
-            'surname': self.surname,
-            'profession': self.profession,
-            'license_number': self.license_number,
-            'city': self.city,
-            'country': self.country,
-            'address': self.address,
-            'phone_number': self.phone_number,
+            'uid': self.uid,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
 
 # Modelo Patient (Datos relativamente estables)
@@ -2444,7 +2440,6 @@ def formulario_evaluacion():
         'formulario_evaluacion.html',
         all_ingredients=ingredients_for_js,
         current_date_str=datetime.now(timezone.utc).strftime('%d/%m/%Y'),
-        current_username=current_user.name or current_user.email,
         education_levels=app.config.get('EDUCATION_LEVELS', []),
         purchasing_power_levels=app.config.get('PURCHASING_POWER_LEVELS', []),
         activity_factors=app.config.get('ACTIVITY_FACTORS', []),
@@ -2470,7 +2465,6 @@ def login_page():
 
         firebase_uid = decoded.get('uid')
         email = decoded.get('email')
-        full_name = decoded.get('name', '')
 
         # Si existe un paciente con este UID o email, redirigir al portal del paciente
         patient = Patient.query.filter(
@@ -2483,21 +2477,10 @@ def login_page():
             app.logger.info(f"Login de paciente detectado para UID {firebase_uid} (Paciente ID {patient.id}).")
             return redirect(url_for('patient_dashboard_page'))
 
-        user = User.query.filter_by(firebase_uid=firebase_uid).first()
+        user = User.query.filter_by(uid=firebase_uid).first()
         if not user:
-            user = User.query.filter_by(email=email).first()
-            if user:
-                user.firebase_uid = firebase_uid
-            else:
-                name = ''
-                surname = ''
-                if full_name:
-                    parts = full_name.split(' ', 1)
-                    name = parts[0]
-                    if len(parts) > 1:
-                        surname = parts[1]
-                user = User(firebase_uid=firebase_uid, email=email, name=name, surname=surname)
-                db.session.add(user)
+            user = User(uid=firebase_uid)
+            db.session.add(user)
             db.session.commit()
 
         login_user(user)
@@ -4258,9 +4241,8 @@ def editar_evaluacion_form(evaluation_id): # Renamed to avoid conflict, will onl
                            purchasing_power_levels=app.config['PURCHASING_POWER_LEVELS'],
                            diet_types=app.config['DIET_TYPES'],
                            all_ingredients=ingredients_for_js,
-                           current_username=current_user.name or current_user.email,
                            current_date_str=evaluation.consultation_date.strftime('%d/%m/%Y')
-                           )
+                          )
 
 
 # --- API para Preparaciones Favoritas ---
@@ -4620,8 +4602,9 @@ def profile_page():
 @firebase_auth_required
 def get_user_info():
     user = g.user
-    app.logger.info(f"API /api/user_info: Devolviendo info para usuario ID: {user.id} ({user.email})")
-    return jsonify(user.to_dict())
+    app.logger.info(f"API /api/user_info: Devolviendo perfil para usuario UID: {user.uid}")
+    profile = get_user_profile(user.uid)
+    return jsonify(profile)
 
 @app.route('/api/user/profile', methods=['PUT'])
 @firebase_auth_required
@@ -4632,21 +4615,11 @@ def update_user_profile():
         return jsonify({'error': 'No se recibieron datos.'}), 400
 
     try:
-        user.name = data.get('name', user.name)
-        user.surname = data.get('surname', user.surname)
-        user.profession = data.get('profession', user.profession)
-        user.license_number = data.get('license_number', user.license_number)
-        user.city = data.get('city', user.city)
-        user.country = data.get('country', user.country)
-        user.address = data.get('address', user.address)
-        user.phone_number = data.get('phone_number', user.phone_number)
-        
-        db.session.commit()
-        app.logger.info(f"Perfil del usuario ID {user.id} actualizado.")
+        fs_update_user_profile(user.uid, data)
+        app.logger.info(f"Perfil del usuario UID {user.uid} actualizado en Firestore.")
         return jsonify({'message': 'Perfil actualizado correctamente.'}), 200
     except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error al actualizar perfil del usuario ID {user.id}: {e}", exc_info=True)
+        app.logger.error(f"Error al actualizar perfil del usuario UID {user.uid}: {e}", exc_info=True)
         return jsonify({'error': 'Error interno al actualizar el perfil.'}), 500
 
 # --- API para Ingredientes ---
