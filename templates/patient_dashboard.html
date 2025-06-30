@@ -35,17 +35,23 @@
 {% block content %}
 <div class="container mt-5">
     <!-- Cabecera del Portal del Paciente -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="mb-0">Mi Portal</h2>
-        <!-- Contenedor del botón de chat, se hará visible con JS -->
-        <div id="show-chat-button-container" style="display: none;">
-            <a href="{{ url_for('patient_shopping_list_page') }}" class="btn btn-success"><i class="fas fa-shopping-cart"></i> Lista de Compras</a>
-            <button id="show-chat-button" class="btn btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#patientChatModal">
-                <i class="fas fa-comments"></i> Chatear con mi Nutricionista
-            </button>
-            <button id="open-weight-modal" class="btn btn-secondary ms-2" data-bs-toggle="modal" data-bs-target="#weightEntryModal">
-                <i class="fas fa-weight"></i> Registrar Peso
-            </button>
+    <div class="row align-items-center mb-4">
+        <div class="col-12 col-sm-auto">
+            <h2 class="mb-2 mb-sm-0">Mi Portal</h2>
+        </div>
+        <div class="col-12 col-sm">
+            <!-- Contenedor del botón de chat, se hará visible con JS -->
+            <div id="show-chat-button-container" class="d-grid gap-2 d-sm-flex justify-content-sm-end" style="display: none;">
+                <a href="{{ url_for('patient_shopping_list_page') }}" class="btn btn-success w-100 w-sm-auto">
+                    <i class="fas fa-shopping-cart"></i> Lista de Compras
+                </a>
+                <button id="show-chat-button" class="btn btn-primary w-100 w-sm-auto ms-sm-2" data-bs-toggle="modal" data-bs-target="#patientChatModal">
+                    <i class="fas fa-comments"></i> Chatear con mi Nutricionista
+                </button>
+                <button id="open-weight-modal" class="btn btn-secondary w-100 w-sm-auto ms-sm-2" data-bs-toggle="modal" data-bs-target="#weightEntryModal">
+                    <i class="fas fa-weight"></i> Registrar Peso
+                </button>
+            </div>
         </div>
     </div>
     <hr class="mb-4">
