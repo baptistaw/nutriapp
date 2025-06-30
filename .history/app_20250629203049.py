@@ -3862,16 +3862,16 @@ def enviar_plan_email_route(evaluation_id):
 
 # --- Rutas API para la App del Paciente ---
 
-@app.route('/api/patient/me/weight', methods=['GET', 'POST'])
+@app.route('/api/patient/<int:patient_id>/weight', methods=['GET', 'POST'])
 @patient_auth_required
-def patient_weight_api():
+def patient_weight_api(patient_id):
     patient = g.patient # El paciente ya fue verificado y cargado por el decorador
 
     if request.method == 'GET':
         # Obtener el historial de peso del paciente
         weight_entries = patient.weight_history.order_by(WeightEntry.date.asc()).all()
         entries_data = [{'date': entry.date.strftime('%Y-%m-%d'), 'weight_kg': entry.weight_kg, 'notes': entry.notes} for entry in weight_entries]
-        app.logger.info(f"API /api/patient/me/weight - Obtenido historial de peso para Paciente ID {patient.id}. {len(entries_data)} entradas.")
+        app.logger.info(f"API /patient/{patient_id}/weight - Obtenido historial de peso. {len(entries_data)} entradas.")
         return jsonify({'entries': entries_data})
 
     elif request.method == 'POST':
@@ -3888,14 +3888,14 @@ def patient_weight_api():
             new_entry = WeightEntry(patient_id=patient.id, date=entry_date, weight_kg=weight_kg, notes=notes)
             db.session.add(new_entry)
             db.session.commit()
-            app.logger.info(f"API /api/patient/me/weight - Nuevo peso registrado para Paciente ID {patient.id}: {weight_kg} kg en {entry_date}.")
+            app.logger.info(f"API /patient/{patient_id}/weight - Nuevo peso registrado: {weight_kg} kg en {entry_date}.")
             return jsonify({'message': 'Peso registrado exitosamente.'}), 201
         except ValueError as ve:
-            app.logger.warning(f"API /api/patient/me/weight - Error de formato para Paciente ID {patient.id}: {ve}")
+            app.logger.warning(f"API /patient/{patient_id}/weight - Error de formato: {ve}")
             return jsonify({'error': f'Error en el formato de los datos: {ve}'}), 400
         except Exception as e:
             db.session.rollback()
-            app.logger.error(f"API /api/patient/me/weight - Error al guardar peso para Paciente ID {patient.id}: {e}", exc_info=True)
+            app.logger.error(f"API /patient/{patient_id}/weight - Error al guardar peso: {e}", exc_info=True)
             return jsonify({'error': 'Error al registrar el peso.'}), 500
     else:
         return jsonify({'error': 'Método no permitido.'}), 405
