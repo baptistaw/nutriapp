@@ -43,6 +43,9 @@
             <button id="show-chat-button" class="btn btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#patientChatModal">
                 <i class="fas fa-comments"></i> Chatear con mi Nutricionista
             </button>
+            <button id="open-weight-modal" class="btn btn-secondary ms-2" data-bs-toggle="modal" data-bs-target="#weightEntryModal">
+                <i class="fas fa-weight"></i> Registrar Peso
+            </button>
         </div>
     </div>
     <hr class="mb-4">
@@ -53,6 +56,44 @@
                 <span class="visually-hidden">Cargando tu plan...</span>
             </div>
             <p class="mt-2 text-muted">Cargando tu plan...</p>
+        </div>
+    </div>
+
+    <!-- Historial de Peso -->
+    <div id="weight-history-section" class="mt-5">
+        <h4 class="mb-3"><i class="fas fa-weight"></i> Historial de Peso</h4>
+        <div id="weight-history">
+            <p class="text-muted">Cargando historial...</p>
+        </div>
+    </div>
+
+    <!-- Modal para Registrar Peso -->
+    <div class="modal fade" id="weightEntryModal" tabindex="-1" aria-labelledby="weightEntryModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="weightEntryModalLabel"><i class="fas fa-weight"></i> Registrar Peso</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="weight-entry-alert" class="alert alert-success d-none" role="alert"></div>
+                    <form id="weightEntryForm">
+                        <div class="mb-3">
+                            <label for="weightDate" class="form-label">Fecha</label>
+                            <input type="date" class="form-control" id="weightDate" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="weightKg" class="form-label">Peso (kg)</label>
+                            <input type="number" step="0.1" class="form-control" id="weightKg" placeholder="0.0" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="weightNotes" class="form-label">Notas (opcional)</label>
+                            <input type="text" class="form-control" id="weightNotes" placeholder="Notas opcionales">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 

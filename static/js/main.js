@@ -1143,6 +1143,10 @@ async function loadPatientDashboard() {
     const dashboardContainer = document.getElementById('patient-dashboard-content');
     if (!dashboardContainer) return;
 
+    // Mostrar el botón de chat incluso si aún no hay plan
+    const showChatBtnContainer = document.getElementById('show-chat-button-container');
+    if (showChatBtnContainer) showChatBtnContainer.style.display = 'block';
+
     const token = localStorage.getItem('patientAuthToken');
     if (!token) {
         console.log("PATIENT_DASHBOARD: No hay token, redirigiendo al login de paciente.");
@@ -1162,13 +1166,16 @@ async function loadPatientDashboard() {
         }
         
         const data = await response.json();
-        if (!response.ok) throw new Error(data.message || `Error del servidor: ${response.status}`);
 
-        dashboardContainer.innerHTML = `<div class="card shadow-sm"><div class="card-header bg-primary text-white"><h3 class="mb-0">Mi Plan Nutricional</h3></div><div class="card-body"><h5 class="card-title">Hola, ${data.patient_name}</h5><p class="card-text text-muted">Este es tu plan correspondiente a la consulta del ${data.consultation_date}.</p><hr><div class="plan-text-container">${data.plan_text}</div><hr><h6 class="mt-4">Observaciones del Nutricionista:</h6><p class="text-muted fst-italic">${data.nutritionist_observations}</p></div></div>`;
+        if (response.status === 404) {
+            dashboardContainer.innerHTML = `<div class="alert alert-info">${data.message || 'Aún no tienes un plan de alimentación disponible.'}</div>`;
+        } else if (!response.ok) {
+            throw new Error(data.message || `Error del servidor: ${response.status}`);
+        } else {
+            dashboardContainer.innerHTML = `<div class="card shadow-sm"><div class="card-header bg-primary text-white"><h3 class="mb-0">Mi Plan Nutricional</h3></div><div class="card-body"><h5 class="card-title">Hola, ${data.patient_name}</h5><p class="card-text text-muted">Este es tu plan correspondiente a la consulta del ${data.consultation_date}.</p><hr><div class="plan-text-container">${data.plan_text}</div><hr><h6 class="mt-4">Observaciones del Nutricionista:</h6><p class="text-muted fst-italic">${data.nutritionist_observations}</p></div></div>`;
+        }
 
-        // Mostrar el botón para abrir el chat
-        const showChatBtnContainer = document.getElementById('show-chat-button-container');
-        if (showChatBtnContainer) showChatBtnContainer.style.display = 'block';
+        loadWeightHistory();
 
     } catch (error) {
         console.error("Error loading patient dashboard:", error);
@@ -1338,6 +1345,78 @@ async function loadShoppingList() {
     }
 }
 
+async function loadWeightHistory() {
+    const container = document.getElementById('weight-history');
+    if (!container) return;
+    const dateInput = document.getElementById('weightDate');
+    if (dateInput && !dateInput.value) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+    const token = localStorage.getItem('patientAuthToken');
+    if (!token) return;
+    try {
+        const response = await fetch('/api/patient/me/weight', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error('Error al cargar el historial de peso');
+        if (data.entries && data.entries.length > 0) {
+            let html = '<table class="table table-sm">';
+            html += '<thead><tr><th>Fecha</th><th>Peso (kg)</th><th>Notas</th></tr></thead><tbody>';
+            data.entries.forEach(e => {
+                html += `<tr><td>${e.date}</td><td>${e.weight_kg}</td><td>${e.notes || ''}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<p class="text-muted">Aún no hay registros de peso.</p>';
+        }
+    } catch (err) {
+        console.error('Error al cargar historial de peso:', err);
+        container.innerHTML = `<div class="alert alert-warning">${err.message}</div>`;
+    }
+}
+
+async function submitWeightEntry(event) {
+    event.preventDefault();
+    const token = localStorage.getItem('patientAuthToken');
+    if (!token) return;
+    const date = document.getElementById('weightDate').value;
+    const weight = document.getElementById('weightKg').value;
+    const notes = document.getElementById('weightNotes').value;
+    try {
+        const response = await fetch('/api/patient/me/weight', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ date: date, weight_kg: weight, notes: notes })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Error al guardar peso');
+        document.getElementById('weightEntryForm').reset();
+        const alertBox = document.getElementById('weight-entry-alert');
+        if (alertBox) {
+            alertBox.textContent = data.message || 'Peso registrado exitosamente.';
+            alertBox.classList.remove('d-none');
+        }
+        loadWeightHistory();
+        setTimeout(() => {
+            const modalEl = document.getElementById('weightEntryModal');
+            if (modalEl) {
+                let modal = bootstrap.Modal.getInstance(modalEl);
+                if (!modal) modal = new bootstrap.Modal(modalEl);
+                modal.hide();
+            }
+            if (alertBox) alertBox.classList.add('d-none');
+        }, 1500);
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
 // --- Base Foods Dynamic Rows ---
 function addBaseFoodRow(foodName = '') {
     const container = document.getElementById('base-foods-container');
@@ -1474,6 +1553,9 @@ function initializeEventListeners() {
             profilePhoneCodeSelect.value = phoneCode || '';
         });
     }
+
+    const weightForm = document.getElementById('weightEntryForm');
+    if (weightForm) weightForm.addEventListener('submit', submitWeightEntry);
 }
 
 function initializeEvaluationForm() {
