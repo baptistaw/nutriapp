@@ -56,6 +56,30 @@
         </div>
     </div>
 
+    <!-- Registro Diario de Peso -->
+    <div id="weight-entry-section" class="mt-5">
+        <h4 class="mb-3"><i class="fas fa-weight"></i> Registrar Peso</h4>
+        <form id="weightEntryForm" class="row gy-2 gx-3 align-items-end">
+            <div class="col-sm-4">
+                <label for="weightDate" class="form-label">Fecha</label>
+                <input type="date" class="form-control" id="weightDate" required>
+            </div>
+            <div class="col-sm-4">
+                <label for="weightKg" class="form-label">Peso (kg)</label>
+                <input type="number" step="0.1" class="form-control" id="weightKg" placeholder="0.0" required>
+            </div>
+            <div class="col-sm-4">
+                <button type="submit" class="btn btn-primary w-100">Guardar</button>
+            </div>
+            <div class="col-12">
+                <input type="text" class="form-control" id="weightNotes" placeholder="Notas opcionales">
+            </div>
+        </form>
+        <div id="weight-history" class="mt-4">
+            <p class="text-muted">Cargando historial...</p>
+        </div>
+    </div>
+
     <!-- Modal del Chat del Paciente -->
     <div class="modal fade" id="patientChatModal" tabindex="-1" aria-labelledby="patientChatModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">

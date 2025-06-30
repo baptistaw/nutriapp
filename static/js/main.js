@@ -1170,6 +1170,8 @@ async function loadPatientDashboard() {
         const showChatBtnContainer = document.getElementById('show-chat-button-container');
         if (showChatBtnContainer) showChatBtnContainer.style.display = 'block';
 
+        loadWeightHistory();
+
     } catch (error) {
         console.error("Error loading patient dashboard:", error);
         dashboardContainer.innerHTML = `<div class="alert alert-danger">Error al cargar tu plan: ${error.message}</div>`;
@@ -1338,6 +1340,64 @@ async function loadShoppingList() {
     }
 }
 
+async function loadWeightHistory() {
+    const container = document.getElementById('weight-history');
+    if (!container) return;
+    const dateInput = document.getElementById('weightDate');
+    if (dateInput && !dateInput.value) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+    const token = localStorage.getItem('patientAuthToken');
+    if (!token) return;
+    try {
+        const response = await fetch('/api/patient/me/weight', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error('Error al cargar el historial de peso');
+        if (data.entries && data.entries.length > 0) {
+            let html = '<table class="table table-sm">';
+            html += '<thead><tr><th>Fecha</th><th>Peso (kg)</th><th>Notas</th></tr></thead><tbody>';
+            data.entries.forEach(e => {
+                html += `<tr><td>${e.date}</td><td>${e.weight_kg}</td><td>${e.notes || ''}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<p class="text-muted">Aún no hay registros de peso.</p>';
+        }
+    } catch (err) {
+        console.error('Error al cargar historial de peso:', err);
+        container.innerHTML = `<div class="alert alert-warning">${err.message}</div>`;
+    }
+}
+
+async function submitWeightEntry(event) {
+    event.preventDefault();
+    const token = localStorage.getItem('patientAuthToken');
+    if (!token) return;
+    const date = document.getElementById('weightDate').value;
+    const weight = document.getElementById('weightKg').value;
+    const notes = document.getElementById('weightNotes').value;
+    try {
+        const response = await fetch('/api/patient/me/weight', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ date: date, weight_kg: weight, notes: notes })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Error al guardar peso');
+        document.getElementById('weightEntryForm').reset();
+        loadWeightHistory();
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
 // --- Base Foods Dynamic Rows ---
 function addBaseFoodRow(foodName = '') {
     const container = document.getElementById('base-foods-container');
@@ -1474,6 +1534,9 @@ function initializeEventListeners() {
             profilePhoneCodeSelect.value = phoneCode || '';
         });
     }
+
+    const weightForm = document.getElementById('weightEntryForm');
+    if (weightForm) weightForm.addEventListener('submit', submitWeightEntry);
 }
 
 function initializeEvaluationForm() {
