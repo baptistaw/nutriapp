@@ -49,8 +49,10 @@
     {% endif %}
 
     <hr class="my-4">
-    <a href="{{ url_for('patient_plan', patient_id=patient.id, evaluation_id=evaluation.id) }}" class="btn btn-secondary">Volver al Plan</a>
-    <a href="{{ url_for('patient_dashboard_page') }}" class="btn btn-secondary">Volver al Dashboard</a>
+    <div class="d-grid gap-2 d-sm-flex">
+        <a href="{{ url_for('patient_plan', patient_id=patient.id, evaluation_id=evaluation.id) }}" class="btn btn-secondary w-100 w-sm-auto">Volver al Plan</a>
+        <a href="{{ url_for('patient_dashboard_page') }}" class="btn btn-secondary w-100 w-sm-auto ms-sm-2">Volver al Dashboard</a>
+    </div>
 
 </div>
 {% endblock %}
