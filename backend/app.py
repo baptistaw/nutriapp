@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict
+from typing import Any, Dict
 
 try:
     from google.cloud import firestore  # type: ignore
@@ -17,14 +17,14 @@ else:  # pragma: no cover - fallback for missing library
     firestore_client = MagicMock()
 
 
-def get_user_profile(uid: str) -> Dict:
+def get_user_profile(uid: str) -> Dict[str, Any]:
     """Return user profile stored in Firestore."""
     doc_ref = firestore_client.collection("user_profiles").document(uid)
     doc = doc_ref.get()
     return doc.to_dict() or {}
 
 
-def create_user_profile(uid: str, data: Dict) -> Dict:
+def create_user_profile(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Create a new user profile inside a transaction."""
     doc_ref = firestore_client.collection("user_profiles").document(uid)
     transaction = firestore_client.transaction()
@@ -33,7 +33,7 @@ def create_user_profile(uid: str, data: Dict) -> Dict:
     return data
 
 
-def update_user_profile(uid: str, data: Dict) -> Dict:
+def update_user_profile(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Update an existing user profile atomically."""
     doc_ref = firestore_client.collection("user_profiles").document(uid)
     transaction = firestore_client.transaction()
